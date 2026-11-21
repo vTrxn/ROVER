@@ -258,6 +258,170 @@ class XINPUT_STATE(ctypes.Structure):
     ]
 
 
+JOY_RETURNALL = 0x000000FF
+JOYCAPS_HASZ = 0x0001
+JOYCAPS_HASR = 0x0002
+JOYCAPS_HASU = 0x0004
+JOYCAPS_HASV = 0x0008
+
+JOY_BTN_TO_XINPUT = (
+    (0x0001, 0x1000),  # A
+    (0x0002, 0x2000),  # B
+    (0x0004, 0x4000),  # X
+    (0x0008, 0x8000),  # Y
+    (0x0010, 0x0100),  # LB
+    (0x0020, 0x0200),  # RB
+    (0x0040, 0x0020),  # View / -
+    (0x0080, 0x0010),  # Start / +
+    (0x0100, 0x0040),  # L3
+    (0x0200, 0x0080),  # R3
+    (0x0400, 0x0400),  # Home
+    (0x1000, 0x0400),  # Alternate HID guide bit
+)
+
+
+class JOYINFOEX(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("dwXpos", wintypes.DWORD),
+        ("dwYpos", wintypes.DWORD),
+        ("dwZpos", wintypes.DWORD),
+        ("dwRpos", wintypes.DWORD),
+        ("dwUpos", wintypes.DWORD),
+        ("dwVpos", wintypes.DWORD),
+        ("dwButtons", wintypes.DWORD),
+        ("dwButtonNumber", wintypes.DWORD),
+        ("dwPOV", wintypes.DWORD),
+        ("dwReserved1", wintypes.DWORD),
+        ("dwReserved2", wintypes.DWORD),
+    ]
+
+
+class JOYCAPSW(ctypes.Structure):
+    _fields_ = [
+        ("wMid", wintypes.WORD),
+        ("wPid", wintypes.WORD),
+        ("szPname", ctypes.c_wchar * 32),
+        ("wXmin", ctypes.c_uint),
+        ("wXmax", ctypes.c_uint),
+        ("wYmin", ctypes.c_uint),
+        ("wYmax", ctypes.c_uint),
+        ("wZmin", ctypes.c_uint),
+        ("wZmax", ctypes.c_uint),
+        ("wNumButtons", ctypes.c_uint),
+        ("wPeriodMin", ctypes.c_uint),
+        ("wPeriodMax", ctypes.c_uint),
+        ("wRmin", ctypes.c_uint),
+        ("wRmax", ctypes.c_uint),
+        ("wUmin", ctypes.c_uint),
+        ("wUmax", ctypes.c_uint),
+        ("wVmin", ctypes.c_uint),
+        ("wVmax", ctypes.c_uint),
+        ("wCaps", ctypes.c_uint),
+        ("wMaxAxes", ctypes.c_uint),
+        ("wNumAxes", ctypes.c_uint),
+        ("wMaxButtons", ctypes.c_uint),
+        ("szRegKey", ctypes.c_wchar * 32),
+        ("szOEMVxD", ctypes.c_wchar * 260),
+    ]
+
+
+try:
+    winmm = ctypes.windll.winmm
+    winmm_joy_get_pos_ex = winmm.joyGetPosEx
+    winmm_joy_get_dev_caps = winmm.joyGetDevCapsW
+except Exception:
+    winmm = None
+    winmm_joy_get_pos_ex = None
+    winmm_joy_get_dev_caps = None
+
+_joy_info = JOYINFOEX()
+_joy_info.dwSize = ctypes.sizeof(JOYINFOEX)
+_joy_info.dwFlags = JOY_RETURNALL
+_joy_caps_cache = {}
+_last_winmm_scan = 0.0
+
+
+def _gp_has_input(gp, stick_thresh=11000):
+    """Return True if any button, trigger, or stick currently deviates beyond idle thresholds."""
+    return (
+        gp.wButtons != 0
+        or gp.bLeftTrigger > 45
+        or gp.bRightTrigger > 45
+        or abs(gp.sThumbLX) > stick_thresh
+        or abs(gp.sThumbLY) > stick_thresh
+        or abs(gp.sThumbRX) > stick_thresh
+        or abs(gp.sThumbRY) > stick_thresh
+    )
+
+
+def _norm_joy_axis(val, vmin, vmax, invert=False):
+    if vmax <= vmin:
+        return 0
+    scaled = ((int(val) - int(vmin)) / float(int(vmax) - int(vmin))) * 65535.0 - 32768.0
+    out = int(round(-scaled if invert else scaled))
+    return max(-32768, min(32767, out))
+
+
+def _get_joy_caps(joy_id):
+    if joy_id in _joy_caps_cache:
+        return _joy_caps_cache[joy_id]
+    caps = JOYCAPSW()
+    if winmm_joy_get_dev_caps is not None and winmm_joy_get_dev_caps(joy_id, ctypes.byref(caps), ctypes.sizeof(caps)) == 0:
+        _joy_caps_cache[joy_id] = caps
+        return caps
+    return None
+
+
+def _populate_state_from_joy(joy_id, info, target_state):
+    """Map WinMM JOYINFOEX HID input into XINPUT_STATE fields."""
+    caps = _get_joy_caps(joy_id)
+    xmin, xmax = (caps.wXmin, caps.wXmax) if caps else (0, 65535)
+    ymin, ymax = (caps.wYmin, caps.wYmax) if caps else (0, 65535)
+    zmin, zmax = (caps.wZmin, caps.wZmax) if caps else (0, 65535)
+    rmin, rmax = (caps.wRmin, caps.wRmax) if caps else (0, 65535)
+    umin, umax = (caps.wUmin, caps.wUmax) if caps else (0, 65535)
+    vmin, vmax = (caps.wVmin, caps.wVmax) if caps else (0, 65535)
+    wcaps = caps.wCaps if caps else (JOYCAPS_HASZ | JOYCAPS_HASR)
+
+    gp = target_state.Gamepad
+    gp.sThumbLX = _norm_joy_axis(info.dwXpos, xmin, xmax, invert=False)
+    gp.sThumbLY = _norm_joy_axis(info.dwYpos, ymin, ymax, invert=True)
+
+    if (wcaps & JOYCAPS_HASZ) and (wcaps & JOYCAPS_HASR):
+        gp.sThumbRX = _norm_joy_axis(info.dwZpos, zmin, zmax, invert=False)
+        gp.sThumbRY = _norm_joy_axis(info.dwRpos, rmin, rmax, invert=True)
+    elif (wcaps & JOYCAPS_HASU) and (wcaps & JOYCAPS_HASV):
+        gp.sThumbRX = _norm_joy_axis(info.dwUpos, umin, umax, invert=False)
+        gp.sThumbRY = _norm_joy_axis(info.dwVpos, vmin, vmax, invert=True)
+    else:
+        gp.sThumbRX = 0
+        gp.sThumbRY = 0
+
+    wbtn = 0
+    raw_btns = info.dwButtons
+    for jmask, xmask in JOY_BTN_TO_XINPUT:
+        if raw_btns & jmask:
+            wbtn |= xmask
+
+    pov = info.dwPOV
+    if pov != 0xFFFF and pov < 36000:
+        if pov <= 4500 or pov >= 31500:
+            wbtn |= 0x0001
+        if 4500 <= pov <= 13500:
+            wbtn |= 0x0008
+        if 13500 <= pov <= 22500:
+            wbtn |= 0x0002
+        if 22500 <= pov <= 31500:
+            wbtn |= 0x0004
+
+    gp.wButtons = wbtn
+    gp.bLeftTrigger = 0
+    gp.bRightTrigger = 0
+    return caps.szPname.strip() if caps and caps.szPname else ""
+
+
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [
         ("dx", wintypes.LONG),
@@ -490,6 +654,8 @@ saved_cursor_y = 400
 
 controller_connected = False
 active_slot = 0
+active_backend = "none"
+active_joy_name = ""
 
 KEYBOARD_LAYOUT_LOWER = [
     ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Borrar"],
@@ -1162,6 +1328,9 @@ class SettingsWindow:
             s_lbl = tk.Label(left, text=subtitle, font=font_tuple(8), anchor="w", wraplength=340, justify="left")
             s_lbl.pack(fill="x", pady=(2, 0))
             self._themed_labels.append(s_lbl)
+        else:
+            s_lbl = None
+        self._last_row_labels = (t_lbl, s_lbl)
 
         right = tk.Frame(row)
         right.pack(side="right")
@@ -1188,6 +1357,7 @@ class SettingsWindow:
                 lambda p: MonoButton(p, "Detectar ahora", command=self._manual_rescan),
                 is_first=True,
             )
+            self._gen_status_title_lbl, self._gen_status_sub_lbl = self._last_row_labels
             self.gen_mode_seg = self._add_row(
                 g1,
                 "Modo de entrada",
@@ -1387,10 +1557,11 @@ class SettingsWindow:
             self.page_sub_lbl.configure(text="Informacion de ejecucion, configuracion guardada y control de proceso.")
 
             g1 = self._make_group("Entorno")
+            engine_desc = f"Motor: {xinput_dll_name} + winmm HID" if winmm_joy_get_pos_ex is not None else f"Motor: {xinput_dll_name}"
             self._add_row(
                 g1,
                 f"{APP_NAME} v{APP_VERSION}",
-                f"Motor XInput: {xinput_dll_name}",
+                engine_desc,
                 lambda p: MonoButton(p, "Abrir carpeta config", command=self._open_config_dir),
                 is_first=True,
             )
@@ -1424,24 +1595,29 @@ class SettingsWindow:
             self.win.geometry(f"{min(scr_w - 40, cur_w)}x{need_h}")
 
     def _controller_title_text(self):
-        if xinput_get_state is None:
-            return "Sin soporte XInput en este equipo"
+        if xinput_get_state is None and winmm_joy_get_pos_ex is None:
+            return "Sin soporte de mando en este equipo"
         if controller_connected:
-            return f"Mando conectado (Slot #{active_slot + 1})"
+            b_lbl = "XInput" if active_backend == "xinput" else "HID"
+            extra = f" - {active_joy_name}" if active_joy_name else ""
+            return f"Mando conectado ({b_lbl} #{active_slot + 1}{extra})"
         return "Esperando mando"
 
     def _controller_sub_text(self):
-        if xinput_get_state is None:
-            return "No se encontro xinput1_4.dll, xinput1_3.dll ni xinput9_1_0.dll."
+        if xinput_get_state is None and winmm_joy_get_pos_ex is None:
+            return "No se encontro soporte XInput ni winmm HID."
         if controller_connected:
-            return "Deteccion automatica activa via XInput."
-        return "Conecta tu control por cable, dongle 2.4G o Bluetooth para detectarlo solo."
+            if active_backend == "winmm":
+                return "Deteccion automatica activa via HID / DirectInput (winmm)."
+            return "Deteccion automatica activa via XInput (cambio automatico entre mandos)."
+        return "Conecta tu control por cable, dongle 2.4G o Bluetooth (XInput / HID)."
 
     def _manual_rescan(self):
-        found = poll_active_controller() if xinput_get_state is not None else False
+        found = poll_active_controller(force_hid=True)
         self.refresh_live_status()
         if found:
-            show_toast(f"Mando detectado en Slot #{active_slot + 1}", "Listo para usar")
+            b_lbl = "XInput" if active_backend == "xinput" else "HID"
+            show_toast(f"Mando detectado ({b_lbl} #{active_slot + 1})", active_joy_name or "Listo para usar")
         else:
             show_toast("Sin mando conectado", "Verifica cable, dongle o bateria")
 
@@ -1617,8 +1793,9 @@ class SettingsWindow:
         p = current_palette()
         self.ctrl_dot.delete("all")
         if controller_connected:
+            b_lbl = "XInput" if active_backend == "xinput" else "HID"
             self.ctrl_dot.create_rectangle(1, 1, 9, 9, fill=p["fg"], outline=p["fg"])
-            self.ctrl_status_lbl.configure(text=f"Conectado | Slot #{active_slot + 1}")
+            self.ctrl_status_lbl.configure(text=f"Conectado | {b_lbl} #{active_slot + 1}")
         else:
             self.ctrl_dot.create_rectangle(1, 1, 9, 9, fill=p["bg"], outline=p["fg"], width=1)
             self.ctrl_status_lbl.configure(text="Esperando mando")
@@ -1629,6 +1806,10 @@ class SettingsWindow:
                 self.gen_mode_seg.select("mouse" if mouse_mode else "game", notify=False)
             if hasattr(self, "gen_kb_btn"):
                 self.gen_kb_btn.set_text("Ocultar teclado" if keyboard_visible else "Mostrar teclado")
+            if hasattr(self, "_gen_status_title_lbl") and self._gen_status_title_lbl.winfo_exists():
+                self._gen_status_title_lbl.configure(text=self._controller_title_text())
+            if hasattr(self, "_gen_status_sub_lbl") and self._gen_status_sub_lbl is not None and self._gen_status_sub_lbl.winfo_exists():
+                self._gen_status_sub_lbl.configure(text=self._controller_sub_text())
 
     def apply_theme(self):
         p = current_palette()
@@ -1793,6 +1974,7 @@ def start_tray_icon():
 
 # Controller polling loop
 state = XINPUT_STATE()
+_scan_state = XINPUT_STATE()
 prev_a = prev_b = prev_x = prev_y = False
 prev_start = prev_trigger = prev_r3 = False
 prev_mouse_btns = set()
@@ -1817,16 +1999,72 @@ def execute_minus_action():
     root.after(0, handle_minus_press, c)
 
 
-def poll_active_controller():
-    global active_slot
-    if xinput_get_state is None:
-        return False
-    if xinput_get_state(active_slot, ctypes.byref(state)) == 0:
-        return True
-    for slot in range(4):
-        if slot != active_slot and xinput_get_state(slot, ctypes.byref(state)) == 0:
-            active_slot = slot
+def _copy_gamepad_state(dst, src):
+    dst.dwPacketNumber = src.dwPacketNumber
+    dst.Gamepad.wButtons = src.Gamepad.wButtons
+    dst.Gamepad.bLeftTrigger = src.Gamepad.bLeftTrigger
+    dst.Gamepad.bRightTrigger = src.Gamepad.bRightTrigger
+    dst.Gamepad.sThumbLX = src.Gamepad.sThumbLX
+    dst.Gamepad.sThumbLY = src.Gamepad.sThumbLY
+    dst.Gamepad.sThumbRX = src.Gamepad.sThumbRX
+    dst.Gamepad.sThumbRY = src.Gamepad.sThumbRY
+
+
+def poll_active_controller(force_hid=False):
+    global active_slot, active_backend, active_joy_name, _last_winmm_scan
+
+    if xinput_get_state is not None:
+        if active_backend == "xinput" and xinput_get_state(active_slot, ctypes.byref(state)) == 0:
+            # Keep active slot while it has input; switch slots only if idle and another controller moves/presses.
+            if _gp_has_input(state.Gamepad):
+                return True
+            for slot in range(4):
+                if slot != active_slot and xinput_get_state(slot, ctypes.byref(_scan_state)) == 0:
+                    if _gp_has_input(_scan_state.Gamepad):
+                        active_slot = slot
+                        active_joy_name = ""
+                        _copy_gamepad_state(state, _scan_state)
+                        return True
             return True
+
+        first_xinput_slot = None
+        for slot in range(4):
+            if xinput_get_state(slot, ctypes.byref(_scan_state)) == 0:
+                if _gp_has_input(_scan_state.Gamepad):
+                    active_backend = "xinput"
+                    active_slot = slot
+                    active_joy_name = ""
+                    _copy_gamepad_state(state, _scan_state)
+                    return True
+                if first_xinput_slot is None:
+                    first_xinput_slot = slot
+                    _copy_gamepad_state(state, _scan_state)
+        if first_xinput_slot is not None:
+            active_backend = "xinput"
+            active_slot = first_xinput_slot
+            active_joy_name = ""
+            return True
+
+    if winmm_joy_get_pos_ex is not None:
+        if active_backend == "winmm" and winmm_joy_get_pos_ex(active_slot, ctypes.byref(_joy_info)) == 0:
+            active_joy_name = _populate_state_from_joy(active_slot, _joy_info, state)
+            return True
+
+        if active_backend == "winmm":
+            _joy_caps_cache.pop(active_slot, None)
+
+        now = time.time()
+        if force_hid or (now - _last_winmm_scan >= 0.4):
+            _last_winmm_scan = now
+            for joy_id in range(16):
+                if winmm_joy_get_pos_ex(joy_id, ctypes.byref(_joy_info)) == 0:
+                    active_backend = "winmm"
+                    active_slot = joy_id
+                    active_joy_name = _populate_state_from_joy(joy_id, _joy_info, state)
+                    return True
+
+    active_backend = "none"
+    active_joy_name = ""
     return False
 
 
@@ -1839,6 +2077,8 @@ def controller_loop():
 
     switch_to_interactive_desktop()
     last_cursor_hide = 0.0
+    last_ui_slot = None
+    last_ui_backend = None
 
     while running_flag:
         if poll_active_controller():
@@ -1846,9 +2086,17 @@ def controller_loop():
             if not controller_connected:
                 controller_connected = True
                 mouse_mode = False
+                last_ui_slot = active_slot
+                last_ui_backend = active_backend
                 if keyboard_visible:
                     root.after(0, hide_keyboard)
-                root.after(0, lambda s=active_slot: show_toast(f"Mando #{s + 1} conectado (Modo Juego)", "Doble clic en '-' o Home para Modo Mouse"))
+                b_lbl = "XInput" if active_backend == "xinput" else "HID"
+                root.after(0, lambda s=active_slot, b=b_lbl: show_toast(f"Mando #{s + 1} conectado ({b} | Modo Juego)", "Doble clic en '-' o Home para Modo Mouse"))
+                if settings_app is not None:
+                    root.after(0, settings_app.refresh_live_status)
+            elif active_slot != last_ui_slot or active_backend != last_ui_backend:
+                last_ui_slot = active_slot
+                last_ui_backend = active_backend
                 if settings_app is not None:
                     root.after(0, settings_app.refresh_live_status)
 

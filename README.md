@@ -4,7 +4,7 @@
 
 ## Que incluye
 
-- **Deteccion automatica:** Escanea los 4 slots XInput de forma continua (`xinput1_4`, `xinput1_3` y `xinput9_1_0`) para reconocer mandos por cable, receptor 2.4 GHz o Bluetooth apenas se conectan.
+- **Deteccion automatica:** Escanea los 4 slots XInput de forma continua (`xinput1_4`, `xinput1_3` y `xinput9_1_0`) con cambio automatico al control que uses si tienes mas de uno conectado, y respaldo HID / DirectInput (`winmm`) para controles por Bluetooth o cable.
 - **Control de cursor y scroll:** Stick izquierdo para mover el puntero con zona muerta, curva de aceleracion y modo precision con gatillo configurable; stick derecho para scroll vertical y horizontal.
 - **Teclado flotante en pantalla:** Se abre desde el control o al detectar un campo de texto, navegable con D-Pad o stick izquierdo.
 - **Diagrama interactivo de botones:** Muestra pulsaciones y movimiento de los sticks en tiempo real, y permite reasignar acciones de raton, scroll, multimedia, volumen, zoom o atajos en los 11 botones y 4 direcciones del D-Pad.
