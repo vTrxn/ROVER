@@ -78,7 +78,7 @@ class ToastManager:
             top_row = tk.Frame(outer, bg=p["surface"], padx=16, pady=10)
             top_row.pack(fill="both")
 
-            # Volvo Amber status bar indicator
+            # Accent status bar indicator
             marker = tk.Canvas(top_row, width=4, height=32, bg=p["surface"], highlightthickness=0)
             marker.create_rectangle(0, 0, 4, 32, fill=p["accent"], outline="")
             marker.pack(side="left", padx=(0, 12), fill="y")

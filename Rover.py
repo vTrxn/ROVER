@@ -6,7 +6,7 @@ import tkinter as tk
 import pystray
 
 from app_profiles import AppProfileManager
-from audio_feedback import VolvoBlinkerAudioEngine
+from audio_feedback import TactileAudioEngine
 from gamepad_ui import BUTTON_ORDER
 from input_backend import (
     AutoRepeater,
@@ -56,7 +56,7 @@ class RoverApp:
         switch_to_interactive_desktop()
 
         self.config = ConfigStore(valid_themes=tuple(THEMES.keys()), valid_actions=tuple(ACTION_LABELS.keys()))
-        self.audio = VolvoBlinkerAudioEngine(self.config)
+        self.audio = TactileAudioEngine(self.config)
         set_ui_audio_callback(lambda kind: self.audio.play_press() if kind == "press" else (self.audio.play_back() if kind == "back" else self.audio.play_nav()))
 
         self.focus_guard = FocusGuard()

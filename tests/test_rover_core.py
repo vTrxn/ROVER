@@ -6,7 +6,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app_profiles import MEDIA_OVERRIDE_MAP, AppProfileManager
-from audio_feedback import VolvoBlinkerAudioEngine
+from audio_feedback import TactileAudioEngine
 from input_backend import AutoRepeater, InputEdgeTracker, MultiTapDetector
 import rover_system
 
@@ -108,10 +108,12 @@ class TestConfigAndProfiles(unittest.TestCase):
 
 class TestAudioEngine(unittest.TestCase):
     def test_wav_headers_and_nonblocking_playback(self):
-        eng = VolvoBlinkerAudioEngine()
+        eng = TactileAudioEngine()
         for buf in (eng._wav_nav, eng._wav_press, eng._wav_back, eng._wav_mode, eng._wav_toast):
             self.assertTrue(buf.startswith(b"RIFF"))
             self.assertIn(b"WAVE", buf[:16])
+        eng.set_volume(50)
+        self.assertTrue(eng._wav_press.startswith(b"RIFF"))
         eng.play_press()
         eng.close()
 

@@ -28,7 +28,7 @@ def _synthesize_relay_pulse(
     amplitude,
     click_strength=0.35,
 ):
-    """Synthesize a warm, damped mechanical relay impulse inspired by Volvo cabin blinkers."""
+    """Synthesize a warm, damped mechanical relay impulse."""
     num_samples = max(1, int(SAMPLE_RATE * (duration_ms / 1000.0)))
     tau = max(0.0005, tau_ms / 1000.0)
     dur_s = duration_ms / 1000.0
@@ -88,40 +88,47 @@ def _build_tick_tock_wav(tick_samples, tock_samples, gap_ms=26.0):
     return _samples_to_wav_bytes(tick_samples + gap_samples + tock_samples)
 
 
-class VolvoBlinkerAudioEngine:
-    """Low-latency in-memory tactile audio engine modeled after Volvo's warm cabin relay tick/tock."""
+class TactileAudioEngine:
+    """Low-latency in-memory tactile audio engine for mechanical clicks and notifications."""
 
     def __init__(self, config_store=None):
         self._config = config_store
         self._last_nav_ts = 0.0
+        self._c_buffers = {}
+        vol = 100 if config_store is None else int(config_store.get("sound_volume", 100))
+        self.set_volume(vol)
 
-        # Pre-synthesize all 4 waveforms in RAM once (< 5 ms total)
+    def set_volume(self, volume_pct):
+        """Rebuild in-memory WAV buffers scaled to volume_pct (10..100)."""
+        pct = max(10, min(100, int(volume_pct)))
+        gain = pct / 100.0
+
         nav_samples = _synthesize_relay_pulse(
-            duration_ms=11.0,
-            f_start=960.0,
-            f_end=480.0,
-            body_freq=310.0,
-            tau_ms=2.4,
-            amplitude=0.45,
-            click_strength=0.35,
+            duration_ms=14.0,
+            f_start=980.0,
+            f_end=470.0,
+            body_freq=320.0,
+            tau_ms=3.2,
+            amplitude=min(0.96, 0.78 * gain),
+            click_strength=0.40,
         )
         tick_samples = _synthesize_relay_pulse(
-            duration_ms=15.0,
-            f_start=1240.0,
-            f_end=640.0,
-            body_freq=340.0,
-            tau_ms=3.2,
-            amplitude=0.72,
-            click_strength=0.42,
+            duration_ms=18.0,
+            f_start=1260.0,
+            f_end=630.0,
+            body_freq=350.0,
+            tau_ms=4.2,
+            amplitude=min(0.98, 0.96 * gain),
+            click_strength=0.48,
         )
         tock_samples = _synthesize_relay_pulse(
-            duration_ms=15.0,
-            f_start=840.0,
+            duration_ms=18.0,
+            f_start=860.0,
             f_end=410.0,
-            body_freq=240.0,
-            tau_ms=3.4,
-            amplitude=0.68,
-            click_strength=0.36,
+            body_freq=250.0,
+            tau_ms=4.4,
+            amplitude=min(0.98, 0.92 * gain),
+            click_strength=0.42,
         )
 
         self._wav_nav = _samples_to_wav_bytes(nav_samples)
@@ -130,22 +137,22 @@ class VolvoBlinkerAudioEngine:
         self._wav_mode = _build_tick_tock_wav(tick_samples, tock_samples, gap_ms=34.0)
 
         toast_a = _synthesize_relay_pulse(
-            duration_ms=26.0,
+            duration_ms=28.0,
             f_start=980.0,
             f_end=960.0,
             body_freq=490.0,
-            tau_ms=7.5,
-            amplitude=0.45,
-            click_strength=0.12,
+            tau_ms=8.0,
+            amplitude=min(0.95, 0.78 * gain),
+            click_strength=0.14,
         )
         toast_b = _synthesize_relay_pulse(
-            duration_ms=34.0,
+            duration_ms=36.0,
             f_start=1310.0,
             f_end=1290.0,
             body_freq=655.0,
-            tau_ms=9.5,
-            amplitude=0.48,
-            click_strength=0.10,
+            tau_ms=10.5,
+            amplitude=min(0.95, 0.84 * gain),
+            click_strength=0.12,
         )
         self._wav_toast = _build_tick_tock_wav(toast_a, toast_b, gap_ms=42.0)
 

@@ -536,7 +536,7 @@ class SettingsWindow:
                 ),
             )
             self._kb_sound_row = g1.add_row(
-                "Sonidos tactiles (estilo intermitentes Volvo)",
+                "Sonidos tactiles",
                 "Clic calido y discreto de baja latencia al navegar, escribir o cerrar el teclado.",
                 lambda p: ToggleSwitch(
                     p,
@@ -633,7 +633,7 @@ class SettingsWindow:
         elif key == "appearance":
             self.page_title_lbl.configure(text="Apariencia y Audio")
             self.page_sub_lbl.configure(
-                text="Estetica monocromatica 100% mate (sin glassmorphism), audio estilo Volvo y vibracion."
+                text="Estetica monocromatica 100% mate (sin glassmorphism), audio tactil y vibracion."
             )
 
             g1 = self._make_group("Tema visual")
@@ -653,14 +653,27 @@ class SettingsWindow:
                 lambda p: MonoButton(p, "Alternar tema", command=self._toggle_theme, primary=True),
             )
 
-            g2 = self._make_group("Acustica Tactil Volvo y Vibracion")
+            g2 = self._make_group("Acustica Tactil y Vibracion")
             self._app_sound_row = g2.add_row(
                 "Activar sonidos tactiles",
-                "Sintesis PCM en memoria inspirada en el relé amortiguado de cabina de Volvo.",
+                "Sintesis PCM en memoria de baja latencia para clics, teclado y avisos.",
                 lambda p: ToggleSwitch(
                     p,
                     value=self.config["tactile_sound"],
                     on_change=self._on_sound_toggle,
+                ),
+            )
+            g2.add_row(
+                "Volumen de sonidos (%)",
+                "Ajusta la intensidad de los clics, teclado y notificaciones (10% a 100%).",
+                lambda p: StepperControl(
+                    p,
+                    self.config.get("sound_volume", 100),
+                    10,
+                    100,
+                    10,
+                    "{:.0f}",
+                    on_change=self._on_volume_change,
                 ),
             )
             g2.add_row(
@@ -757,6 +770,12 @@ class SettingsWindow:
         want_top = pos_key == "top"
         if self.config["keyboard_at_top"] != want_top:
             self.app.keyboard.toggle_position()
+
+    def _on_volume_change(self, val):
+        pct = max(10, min(100, int(round(val))))
+        self.config.set_and_save("sound_volume", pct)
+        self.app.audio.set_volume(pct)
+        self.app.audio.play_press()
 
     def _on_sound_toggle(self, enabled):
         self.config.set_and_save("tactile_sound", bool(enabled))

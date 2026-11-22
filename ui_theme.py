@@ -264,7 +264,7 @@ def apply_dwm_window_theme(win, theme_name="dark", corner_round=True):
 
 
 def build_tray_pil_image(theme_name="dark", size=64):
-    """Create a tactile tray icon with Nordic Cockpit surface and Volvo Amber status accent."""
+    """Create a tactile tray icon matching the active theme."""
     t = THEMES.get(theme_name, THEMES["dark"])
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -418,7 +418,7 @@ class MonoButton(tk.Frame):
 
 
 class ToggleSwitch(tk.Canvas):
-    """Animated pill toggle switch with Volvo Amber active state and keyboard accessibility."""
+    """Animated pill toggle switch with active state highlight and keyboard accessibility."""
 
     W = 48
     H = 24
@@ -532,7 +532,7 @@ class ToggleSwitch(tk.Canvas):
 
 
 class SegmentedControl(tk.Frame):
-    """Segmented selector with Volvo Amber active highlight and arrow-key navigation."""
+    """Segmented selector with active highlight and arrow-key navigation."""
 
     def __init__(self, parent, options, selected_key, on_change=None, font_size=9):
         super().__init__(parent, highlightthickness=1, bd=0, takefocus=1)

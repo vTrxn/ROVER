@@ -56,6 +56,7 @@ DEFAULT_CONFIG = {
     "auto_keyboard_ibeam": True,
     "show_toasts": True,
     "tactile_sound": True,
+    "sound_volume": 100,
     "haptic_rumble": True,
     "minimize_to_tray": True,
     "kb_snippets": [".com", "@gmail.com"],
@@ -381,6 +382,7 @@ class ConfigStore:
 
             if cfg["theme"] not in self._valid_themes:
                 cfg["theme"] = "dark"
+            cfg["sound_volume"] = max(10, min(100, int(cfg.get("sound_volume", 100))))
             self.data = cfg
             return cfg
 
