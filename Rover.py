@@ -795,15 +795,37 @@ for r_idx, row in enumerate(KEYBOARD_LAYOUT_LOWER):
             row_items.append({"bg": bg, "text": tx})
     key_items.append(row_items)
 
-kb_win.update_idletasks()
-kb_w = kb_win.winfo_width()
-kb_h = kb_win.winfo_height()
-kb_x = (scr_w - kb_w) // 2
+def _get_work_area():
+    rect = wintypes.RECT()
+    if user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+        return rect.left, rect.top, rect.right, rect.bottom
+    return 0, 0, scr_w, scr_h
+
+
+kb_w = 1
+kb_h = 1
+kb_x = 0
 kb_anim_id = None
 
 
+def _refresh_kb_metrics():
+    global kb_w, kb_h, kb_x
+    kb_win.update_idletasks()
+    # Use requested size because unmapped Toplevels report placeholder width/height (e.g. 200x200)
+    kb_w = max(kb_win.winfo_reqwidth(), 1)
+    kb_h = max(kb_win.winfo_reqheight(), 1)
+    wa_l, _wa_t, wa_r, _wa_b = _get_work_area()
+    kb_x = max(wa_l + 8, min(wa_r - kb_w - 8, wa_l + (wa_r - wa_l - kb_w) // 2))
+
+
 def _target_kb_y():
-    return 32 if config["keyboard_at_top"] else (scr_h - kb_h - 44)
+    _wa_l, wa_t, _wa_r, wa_b = _get_work_area()
+    if config["keyboard_at_top"]:
+        return wa_t + 24
+    return max(wa_t + 12, wa_b - kb_h - 18)
+
+
+_refresh_kb_metrics()
 
 
 def _ease_out_cubic(t):
@@ -982,13 +1004,14 @@ def show_toast(title, subtitle=""):
 
         t.update_idletasks()
         apply_overlay_window_style(t)
-        w = t.winfo_width()
-        h = t.winfo_height()
+        w = max(t.winfo_reqwidth(), t.winfo_width())
+        h = max(t.winfo_reqheight(), t.winfo_height())
         prog_bar = prog_canvas.create_rectangle(0, 0, w, 3, fill=p["fg"], outline="")
 
-        tx = (scr_w - w) // 2
+        wa_l, wa_t, wa_r, _wa_b = _get_work_area()
+        tx = max(wa_l + 8, min(wa_r - w - 8, wa_l + (wa_r - wa_l - w) // 2))
         start_y = -h - 8
-        target_y = 24
+        target_y = wa_t + 24
         t.geometry(f"{w}x{h}+{tx}+{start_y}")
 
         duration_ms = 1850
@@ -1029,6 +1052,7 @@ def show_keyboard():
     user32.SetCursorPos(scr_w + 500, scr_h + 500)
 
     apply_keyboard_theme()
+    _refresh_kb_metrics()
     target_y = _target_kb_y()
     start_y = -kb_h - 10 if config["keyboard_at_top"] else scr_h + 10
 
