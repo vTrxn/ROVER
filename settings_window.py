@@ -202,7 +202,7 @@ class SettingsWindow:
         self.hint_title_lbl.pack(fill="x")
         self.hint_body_lbl = tk.Label(
             self.hint_card,
-            text="2x (-)/Home: Modo Mouse\n1x (-) o X: Teclado\nStart (+): Menu Radial\nB: Cerrar / Escape",
+            text="2x (-)/Home: Modo Mouse\n1x (-) o X: Teclado\n2x Start (+): Menu Radial\nB: Cerrar / Escape",
             font=ui_font(8),
             justify="left",
             anchor="w",
@@ -562,7 +562,7 @@ class SettingsWindow:
                 ("LT o tecla [#+=]", "Alternar capa de Simbolos y Acentos (á, é, í, ó, ú, ¿, ¡, @, #)"),
                 ("L3 o tecla [Mayus]", "Alternar Mayuscula 1-toque -> Bloq Mayus (CAPS) -> minusculas"),
                 ("< / > (teclado)", "Mover cursor de texto a izquierda / derecha dentro del campo"),
-                ("Start (+)", "Abrir Menu Radial Control de Sofa (Apagar monitor, Captura, Suspender)"),
+                ("2x Start (+)", "Abrir Menu Radial Control de Sofa (Apagar monitor, Captura, Suspender)"),
             ]
             for badge_txt, desc_txt in shortcuts:
                 g2.add_row(desc_txt, "", None, badge_text=badge_txt)

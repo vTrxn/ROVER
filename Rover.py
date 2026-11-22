@@ -71,6 +71,7 @@ class RoverApp:
         self._cursor_repeater = AutoRepeater(initial_delay=0.28, interval=0.075)
         self._radial_repeater = AutoRepeater(initial_delay=0.26, interval=0.11)
         self._minus_detector = MultiTapDetector(window_sec=0.34)
+        self._radial_tap_detector = MultiTapDetector(window_sec=0.36, immediate_at=2)
 
         self._auto_kb_timer_id = None
         self.settings_win = None
@@ -109,6 +110,7 @@ class RoverApp:
         self._back_repeater.reset()
         self._space_repeater.reset()
         self._cursor_repeater.reset()
+        self._radial_tap_detector.reset()
         self.synth.release_all_mouse_buttons()
         self._cancel_pending_auto_kb()
 
@@ -194,7 +196,7 @@ class RoverApp:
             self.poller.rumble(0.85, 0.70, 125)
         if notify:
             if self.mouse_mode:
-                self.toast.show("Modo Mouse ACTIVO", "Stick: Mover | A/RB: Clic | B: Escape | Start: Menu", play_sound=False)
+                self.toast.show("Modo Mouse ACTIVO", "Stick: Mover | A/RB: Clic | B: Escape | 2x Start: Menu", play_sound=False)
             else:
                 self.toast.show("Modo Juego ACTIVO", "Doble clic en (-) o Home para Modo Mouse", play_sound=False)
         if self.settings_win is not None:
@@ -393,9 +395,14 @@ class RoverApp:
             self.edge_tracker.consume_current(snap.pressed)
             self.root.after(0, self.toggle_keyboard)
 
+        radial_edge_fired = False
+
         def on_open_radial():
-            self.edge_tracker.consume_current(snap.pressed)
-            self.root.after(0, self.open_radial_menu)
+            nonlocal radial_edge_fired
+            radial_edge_fired = True
+            if self._radial_tap_detector.step(True, time.monotonic()) >= 2:
+                self.edge_tracker.consume_current(snap.pressed)
+                self.root.after(0, self.open_radial_menu)
 
         def on_left_click_up():
             if auto_kb:
@@ -415,6 +422,9 @@ class RoverApp:
                 on_left_click_released=on_left_click_up,
                 on_open_radial=on_open_radial,
             )
+
+        if not radial_edge_fired:
+            self._radial_tap_detector.step(False, time.monotonic())
 
         r_dz = max(6000, dz)
         if abs(snap.ry) > r_dz:

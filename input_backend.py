@@ -286,10 +286,11 @@ class AutoRepeater:
 
 
 class MultiTapDetector:
-    """Lock-free, thread-free multi-press detector for '-' (VIEW) and Home buttons."""
+    """Lock-free, thread-free multi-press detector for '-' (VIEW), Home, and double-tap Radial Menu."""
 
-    def __init__(self, window_sec=0.34):
+    def __init__(self, window_sec=0.34, immediate_at=None):
         self.window_sec = window_sec
+        self.immediate_at = immediate_at
         self._count = 0
         self._last_tap_ts = 0.0
 
@@ -298,13 +299,17 @@ class MultiTapDetector:
         self._last_tap_ts = 0.0
 
     def step(self, tap_edge, now):
-        """Return finished tap count (> 0) once the multi-tap window expires, or 0 while waiting."""
+        """Return finished tap count (> 0) once window expires or immediately when immediate_at is reached."""
         if tap_edge:
             if self._count > 0 and (now - self._last_tap_ts < self.window_sec):
                 self._count += 1
             else:
                 self._count = 1
             self._last_tap_ts = now
+            if self.immediate_at is not None and self._count >= self.immediate_at:
+                c = self._count
+                self._count = 0
+                return c
             return 0
 
         if self._count > 0 and (now - self._last_tap_ts >= self.window_sec):

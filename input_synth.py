@@ -194,7 +194,7 @@ ACTION_SPECS = [
     ("double_click", "Doble clic izquierdo", "double_click", None),
     ("precision", "Modo precision (mantener)", "modifier", None),
     ("show_keyboard", "Abrir / cerrar teclado", "toggle_keyboard", None),
-    ("radial_menu", "Menu Radial (Control de Sofa)", "radial_menu", None),
+    ("radial_menu", "Menu Radial (2x pulsos)", "radial_menu", None),
     ("escape", "Tecla Escape", "vk_tap", (VK_ESCAPE, False)),
     ("enter", "Tecla Enter", "vk_tap", (VK_RETURN, False)),
     ("media_ff", "Adelantar video (Flecha Der)", "vk_tap", (VK_RIGHT, True)),

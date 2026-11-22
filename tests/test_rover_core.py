@@ -53,6 +53,15 @@ class TestDetectorsAndRepeaters(unittest.TestCase):
         self.assertEqual(det.step(True, 2.15), 0)
         self.assertEqual(det.step(False, 2.46), 2)
 
+    def test_multi_tap_detector_immediate_double_tap_radial(self):
+        det = MultiTapDetector(window_sec=0.36, immediate_at=2)
+        # Single tap does not open radial menu
+        self.assertEqual(det.step(True, 1.00), 0)
+        self.assertEqual(det.step(False, 1.40), 1)
+        # Double tap opens immediately on the second press
+        self.assertEqual(det.step(True, 2.00), 0)
+        self.assertEqual(det.step(True, 2.18), 2)
+
     def test_auto_repeater_initial_delay_and_interval(self):
         rep = AutoRepeater(initial_delay=0.30, interval=0.10)
         self.assertTrue(rep.step("X", 1.00))
