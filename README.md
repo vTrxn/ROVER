@@ -1,29 +1,35 @@
 # Rover
 
-**Rover** es una aplicacion ligera para Windows que convierte cualquier control compatible con XInput en un raton y teclado para tu escritorio. Detecta el mando automaticamente, permite alternar entre modo juego y modo mouse con un toque, incluye teclado flotante en pantalla y te deja reasignar cada boton, gatillo y direccion del D-Pad desde un esquema interactivo.
+**Rover** es una utilidad ligera para Windows que convierte cualquier mando compatible con XInput o HID en un raton y teclado flotante para tu escritorio. Detecta el mando automaticamente, alterna entre Modo Juego y Modo Mouse con doble toque, incluye un teclado en pantalla de 4 capas compatible con Netflix y navegadores, y ofrece respuesta acustica tactil inspirada en los intermitentes de cabina de Volvo.
 
-## Que incluye
+## Caracteristicas principales
 
-- **Deteccion automatica:** Escanea los 4 slots XInput de forma continua (`xinput1_4`, `xinput1_3` y `xinput9_1_0`) con cambio automatico al control que uses si tienes mas de uno conectado, y respaldo HID / DirectInput (`winmm`) para controles por Bluetooth o cable.
-- **Control de cursor y scroll:** Stick izquierdo para mover el puntero con zona muerta, curva de aceleracion y modo precision con gatillo configurable; stick derecho para scroll vertical y horizontal.
-- **Teclado flotante en pantalla:** Se abre desde el control o al detectar un campo de texto, navegable con D-Pad o stick izquierdo.
-- **Diagrama interactivo de botones:** Muestra pulsaciones y movimiento de los sticks en tiempo real, y permite reasignar acciones de raton, scroll, multimedia, volumen, zoom o atajos en los 11 botones y 4 direcciones del D-Pad.
-- **Interfaz de dos colores invertibles:** Paleta en gris mate oscuro (`#1E1E1E`) y blanco (`#F5F5F5`), con tipografia `JetBrainsMono NF` embebida e inversion de colores entre tema oscuro y claro en ajustes, teclado flotante, avisos y bandeja del sistema.
-- **Instalador y version portable:** Puede ejecutarse directo como ejecutable portable o instalarse con accesos directos, inicio automatico en bandeja y registro de desinstalacion en Windows.
+- **Deteccion automatica (XInput + WinMM HID):** Escanea los 4 slots XInput (`xinput1_4`, `xinput1_3`, `xinput9_1_0`) con cambio automatico al mando activo y soporte de respaldo HID / DirectInput (`winmm`).
+- **Teclado flotante multicapa con Key-Preview Pop-up:**
+  - 4 capas completas: minusculas (`abc`), mayuscula de 1 toque (`Mayus`), bloqueo de mayusculas (`CAPS`) y capa de simbolos y vocales acentuadas (`#+=`, `á, é, í, ó, ú, ü, ¿, ¡, @, #`).
+  - Animacion emergente **Key-Preview Pop-up** sobre la tecla accionada para lectura clara a distancia.
+  - Preservacion estricta de foco (`WS_EX_NOACTIVATE` + `SWP_NOACTIVATE`) e inyeccion hibrida `VkKeyScanW` + `ScanCode` + `Unicode` compatible con Netflix (app y navegador en pantalla completa).
+- **Aislamiento de flancos en el boton B (`Escape` / `Cerrar`):** Por defecto `B` esta asignado a `Tecla Escape`. Cuando el teclado flotante esta abierto, `B` lo cierra limpiamente y consume el flanco para no enviar `Esc` a la aplicacion activa; cuando el teclado esta cerrado, `B` actua directamente como `Escape`.
+- **Acustica tactil estilo Volvo:** Sintesis PCM en memoria de baja latencia (`tick` / `tock` calido y amortiguado) al navegar, escribir o cambiar de modo, con interruptor rapido para activarlo o silenciarlo.
+- **Diseno Nordic Cockpit (100% mate, sin glassmorphism):** Paletas *Obsidian Cockpit* (oscuro) y *Daylight Instrument* (claro) verificadas con contraste WCAG AAA y acento focal Ambar Volvo (`#E5A93C`).
 
 ## Controles por defecto en Modo Mouse
 
-| Control | Accion |
-| --- | --- |
-| Doble clic `-` o `Home` | Alternar entre Modo Juego y Modo Mouse |
-| 1 clic `-` o `Home` | Mostrar u ocultar el teclado flotante |
-| Stick izquierdo | Mover el cursor |
-| Stick derecho | Scroll vertical y horizontal |
-| `A` / `B` | Clic izquierdo / Clic derecho |
-| `X` | Abrir o cerrar teclado flotante |
-| `LT` / `RT` | Modo precision / Atras (`Alt + Izq`) |
-| `L3` | Play / Pausa multimedia |
-| D-Pad | Scroll continuo (reasignable) |
+| Control | Accion en Modo Mouse | Accion en Teclado Flotante |
+| --- | --- | --- |
+| Doble clic `-` o `Home` | Alternar entre Modo Juego y Modo Mouse | Salir a Modo Juego |
+| 1 clic `-` o `Home` | Mostrar u ocultar el teclado flotante | Cerrar teclado flotante |
+| Stick izquierdo | Mover el cursor | Navegar por las teclas |
+| Stick derecho | Scroll vertical y horizontal | - |
+| `A` | Clic izquierdo (auto-abre teclado en texto) | Escribir tecla activa |
+| `B` | Tecla Escape (`Esc`) | Cerrar teclado (sin enviar `Esc`) |
+| `X` | Abrir o cerrar teclado flotante | Borrar (`Backspace` con repeticion) |
+| `Y` | Clic derecho | Espacio (con repeticion) |
+| `LT` / `RT` | Modo precision / Atras (`Alt + Izq`) | Capa Simbolos (`#+=`) / - |
+| `LB` / `RB` | Sin asignar | Mover cursor de texto (`<` / `>`) |
+| `L3` / `R3` | Play / Pausa multimedia / Sin asignar | Alternar `Mayus/CAPS` / Posicion Arriba/Abajo |
+| `Start (+)` | Tecla Enter | Enviar `Enter` y cerrar teclado |
+| D-Pad | Scroll continuo (reasignable) | Navegar por las teclas |
 
 ## Ejecutar o compilar desde codigo fuente
 
@@ -35,14 +41,14 @@ python -m venv .venv
 .\.venv\Scripts\python Rover.py
 ```
 
-Para generar los ejecutables independientes (`Rover.exe` y `Rover-Setup.exe`) en un entorno limpio:
+Para generar los ejecutables independientes (`Rover.exe` y `Rover-Setup.exe`):
 
 ```powershell
 .\.venv\Scripts\pip install pyinstaller
-.\.venv\Scripts\python -m PyInstaller --onefile --noconsole --clean --name Rover --icon "assets\app.ico" --add-data "assets;assets" Rover.py
+.\.venv\Scripts\python -m PyInstaller --clean Rover.spec
 mkdir payload -Force
 copy dist\Rover.exe payload\Rover.exe
-.\.venv\Scripts\python -m PyInstaller --onefile --noconsole --clean --name Rover-Setup --icon "assets\app.ico" --add-data "assets;assets" --add-data "payload;payload" installer.py
+.\.venv\Scripts\python -m PyInstaller --clean Rover-Setup.spec
 ```
 
-La configuracion personal se guarda en `%APPDATA%\Rover\config.json`.
+La configuracion personal se guarda de forma atomica en `%APPDATA%\Rover\config.json`.
