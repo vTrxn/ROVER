@@ -129,12 +129,33 @@ class VolvoBlinkerAudioEngine:
         self._wav_back = _samples_to_wav_bytes(tock_samples)
         self._wav_mode = _build_tick_tock_wav(tick_samples, tock_samples, gap_ms=34.0)
 
+        toast_a = _synthesize_relay_pulse(
+            duration_ms=26.0,
+            f_start=980.0,
+            f_end=960.0,
+            body_freq=490.0,
+            tau_ms=7.5,
+            amplitude=0.45,
+            click_strength=0.12,
+        )
+        toast_b = _synthesize_relay_pulse(
+            duration_ms=34.0,
+            f_start=1310.0,
+            f_end=1290.0,
+            body_freq=655.0,
+            tau_ms=9.5,
+            amplitude=0.48,
+            click_strength=0.10,
+        )
+        self._wav_toast = _build_tick_tock_wav(toast_a, toast_b, gap_ms=42.0)
+
         # Keep C buffers pinned in memory so PlaySoundW(SND_MEMORY | SND_ASYNC) is 100% safe
         self._c_buffers = {
             "nav": ctypes.create_string_buffer(self._wav_nav),
             "press": ctypes.create_string_buffer(self._wav_press),
             "back": ctypes.create_string_buffer(self._wav_back),
             "mode": ctypes.create_string_buffer(self._wav_mode),
+            "toast": ctypes.create_string_buffer(self._wav_toast),
         }
 
     def is_enabled(self):
@@ -175,3 +196,6 @@ class VolvoBlinkerAudioEngine:
 
     def play_mode(self):
         self._play_buffer("mode")
+
+    def play_toast(self):
+        self._play_buffer("toast")

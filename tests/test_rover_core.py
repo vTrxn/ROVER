@@ -100,7 +100,7 @@ class TestConfigAndProfiles(unittest.TestCase):
 class TestAudioEngine(unittest.TestCase):
     def test_wav_headers_and_nonblocking_playback(self):
         eng = VolvoBlinkerAudioEngine()
-        for buf in (eng._wav_nav, eng._wav_press, eng._wav_back, eng._wav_mode):
+        for buf in (eng._wav_nav, eng._wav_press, eng._wav_back, eng._wav_mode, eng._wav_toast):
             self.assertTrue(buf.startswith(b"RIFF"))
             self.assertIn(b"WAVE", buf[:16])
         eng.play_press()

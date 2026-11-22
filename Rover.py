@@ -81,7 +81,7 @@ class RoverApp:
         load_bundled_fonts()
         self.root.report_callback_exception = self._on_tk_exception
 
-        self.toast = ToastManager(self.root, self.config, self.focus_guard)
+        self.toast = ToastManager(self.root, self.config, self.focus_guard, audio=self.audio)
         self.keyboard = FloatingKeyboard(
             self.root,
             self.config,
@@ -152,7 +152,7 @@ class RoverApp:
         if self.keyboard.visible:
             self.keyboard.hide(reason="radial")
         if self.config.get("haptic_rumble", True):
-            self.poller.rumble(0.18, 0.14, 24)
+            self.poller.rumble(0.65, 0.50, 75)
         self.radial.show()
 
     def _close_radial_menu(self):
@@ -162,7 +162,7 @@ class RoverApp:
     def _execute_radial_action(self, act_id):
         self._consume_active_buttons()
         if self.config.get("haptic_rumble", True):
-            self.poller.rumble(0.24, 0.18, 28)
+            self.poller.rumble(0.75, 0.55, 85)
         if act_id == "monitor_off":
             self.synth.turn_off_monitor()
         elif act_id == "screenshot":
@@ -191,12 +191,12 @@ class RoverApp:
             self.profile_mgr.auto_switched_to_game = False
         self.audio.play_mode()
         if self.config.get("haptic_rumble", True):
-            self.poller.rumble(0.32, 0.22, 42)
+            self.poller.rumble(0.85, 0.70, 125)
         if notify:
             if self.mouse_mode:
-                self.toast.show("Modo Mouse ACTIVO", "Stick: Mover | A/RB: Clic | B: Escape | Start: Menu")
+                self.toast.show("Modo Mouse ACTIVO", "Stick: Mover | A/RB: Clic | B: Escape | Start: Menu", play_sound=False)
             else:
-                self.toast.show("Modo Juego ACTIVO", "Doble clic en (-) o Home para Modo Mouse")
+                self.toast.show("Modo Juego ACTIVO", "Doble clic en (-) o Home para Modo Mouse", play_sound=False)
         if self.settings_win is not None:
             self.settings_win.refresh_live_status()
 

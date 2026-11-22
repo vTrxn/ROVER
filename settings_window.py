@@ -119,7 +119,8 @@ class SettingsWindow:
             text="MODO JUEGO",
             font=mono_font(8, "bold"),
             padx=10,
-            pady=5,
+            pady=4,
+            highlightthickness=1,
             cursor="hand2",
         )
         self.mode_chip.pack(side="left", padx=(0, 8))
@@ -131,7 +132,8 @@ class SettingsWindow:
             text="SONIDO: ON",
             font=mono_font(8, "bold"),
             padx=10,
-            pady=5,
+            pady=4,
+            highlightthickness=1,
             cursor="hand2",
         )
         self.sound_chip.pack(side="left", padx=(0, 8))
@@ -198,7 +200,7 @@ class SettingsWindow:
         self.hint_title_lbl.pack(fill="x")
         self.hint_body_lbl = tk.Label(
             self.hint_card,
-            text="2x (-)/Home: Modo Mouse\n1x (-) o X: Teclado\nB: Cerrar / Escape",
+            text="2x (-)/Home: Modo Mouse\n1x (-) o X: Teclado\nStart (+): Menu Radial\nB: Cerrar / Escape",
             font=ui_font(8),
             justify="left",
             anchor="w",
@@ -666,7 +668,7 @@ class SettingsWindow:
             )
             g2.add_row(
                 "Micro-vibracion en mando (XInput)",
-                "Pulso tactil corto de 42ms al cambiar de modo o abrir el Menu Radial.",
+                "Pulso tactil nitido (125ms) al cambiar de modo o usar el Menu Radial.",
                 lambda p: ToggleSwitch(
                     p,
                     value=self.config["haptic_rumble"],
@@ -675,8 +677,8 @@ class SettingsWindow:
             )
             g2.add_row(
                 "Probar vibracion",
-                "Envia un pulso suave al mando XInput conectado.",
-                lambda p: MonoButton(p, "Vibrar", command=lambda: self.app.poller.rumble(0.40, 0.30, 80)),
+                "Envia un pulso firme de 160ms al mando XInput conectado.",
+                lambda p: MonoButton(p, "Vibrar", command=lambda: self.app.poller.rumble(0.90, 0.75, 160)),
             )
 
         elif key == "system":
@@ -951,15 +953,26 @@ class SettingsWindow:
         mode_base = "MOUSE" if self.app.mouse_mode else "JUEGO"
         prof_suffix = f" ({prof.upper()})" if prof != "default" else ""
         if self.app.mouse_mode:
-            self.mode_chip.configure(text=f"MODO: {mode_base}{prof_suffix}", bg=p["accent"], fg=p["accent_fg"])
+            self.mode_chip.configure(
+                text=f"MODO: {mode_base}{prof_suffix}",
+                bg=p["accent"],
+                fg=p["accent_fg"],
+                highlightbackground=p["accent"],
+            )
         else:
-            self.mode_chip.configure(text=f"MODO: {mode_base}{prof_suffix}", bg=p["elevated"], fg=p["fg_secondary"])
+            self.mode_chip.configure(
+                text=f"MODO: {mode_base}{prof_suffix}",
+                bg=p["elevated"],
+                fg=p["fg_secondary"],
+                highlightbackground=p["border_subtle"],
+            )
 
         snd_on = bool(self.config["tactile_sound"])
         self.sound_chip.configure(
             text="SONIDO: ON" if snd_on else "SONIDO: OFF",
             bg=p["elevated"],
             fg=p["accent"] if snd_on else p["fg_muted"],
+            highlightbackground=p["border_subtle"],
         )
 
         self.btn_quick_kb.set_text("Ocultar teclado" if self.app.keyboard.visible else "Abrir teclado")

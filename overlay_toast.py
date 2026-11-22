@@ -8,10 +8,11 @@ from ui_theme import THEMES, apply_dwm_window_theme, ease_out_cubic, ui_font
 class ToastManager:
     """Focus-safe Nordic Cockpit toast notifications with 60fps time-based slide and progress bar."""
 
-    def __init__(self, root, config_store, focus_guard):
+    def __init__(self, root, config_store, focus_guard, audio=None):
         self.root = root
         self.config = config_store
         self.focus_guard = focus_guard
+        self.audio = audio
         self._win = None
         self._anim_id = None
         self._hide_id = None
@@ -56,10 +57,12 @@ class ToastManager:
 
         self._anim_id = self.root.after(1, tick)
 
-    def show(self, title, subtitle=""):
+    def show(self, title, subtitle="", play_sound=True):
         if not self.config["show_toasts"]:
             return
         self.destroy_active()
+        if play_sound and self.audio is not None:
+            self.audio.play_toast()
         p = self._palette()
         try:
             self.focus_guard.capture_foreground_target()

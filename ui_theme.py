@@ -528,10 +528,10 @@ class SegmentedControl(tk.Frame):
 
 
 class StepperControl(tk.Frame):
-    """Numeric stepper (- / value / +) with tabular monospace readout."""
+    """Unified bordered numeric stepper [- | value | +] with tabular monospace readout."""
 
     def __init__(self, parent, value, min_val, max_val, step, fmt="{:.0f}", on_change=None):
-        super().__init__(parent, highlightthickness=0, bd=0)
+        super().__init__(parent, highlightthickness=1, bd=0)
         self._val = value
         self._min = min_val
         self._max = max_val
@@ -540,14 +540,22 @@ class StepperControl(tk.Frame):
         self._on_change = on_change
         self._palette = THEMES["dark"]
 
-        self._btn_dec = MonoButton(self, "-", command=lambda: self._adjust(-self._step), mono=True, padx=10, pady=3, font_size=10)
+        self._btn_dec = tk.Label(self, text="-", font=mono_font(10, "bold"), width=3, pady=4, cursor="hand2")
         self._btn_dec.pack(side="left")
+        self._btn_dec.bind("<Button-1>", lambda _e: self._adjust(-self._step))
 
-        self._val_lbl = tk.Label(self, text=self._fmt.format(self._val), font=mono_font(10, "bold"), width=7, anchor="center")
-        self._val_lbl.pack(side="left", padx=4)
+        self._sep1 = tk.Frame(self, width=1)
+        self._sep1.pack(side="left", fill="y")
 
-        self._btn_inc = MonoButton(self, "+", command=lambda: self._adjust(self._step), mono=True, padx=10, pady=3, font_size=10)
+        self._val_lbl = tk.Label(self, text=self._fmt.format(self._val), font=mono_font(10, "bold"), width=6, anchor="center", pady=4)
+        self._val_lbl.pack(side="left")
+
+        self._sep2 = tk.Frame(self, width=1)
+        self._sep2.pack(side="left", fill="y")
+
+        self._btn_inc = tk.Label(self, text="+", font=mono_font(10, "bold"), width=3, pady=4, cursor="hand2")
         self._btn_inc.pack(side="left")
+        self._btn_inc.bind("<Button-1>", lambda _e: self._adjust(self._step))
 
     def set_value(self, value):
         self._val = max(self._min, min(self._max, value))
@@ -559,16 +567,21 @@ class StepperControl(tk.Frame):
         if nxt != self._val:
             self._val = nxt
             self._val_lbl.configure(text=self._fmt.format(self._val))
+            _trigger_ui_audio("nav")
             if self._on_change:
                 self._on_change(self._val)
 
     def apply_theme(self, palette):
         self._palette = palette
         surf = palette.get("surface", palette["bg"])
-        self.configure(bg=surf)
+        elev = palette.get("elevated", surf)
+        bdr = palette["border_subtle"]
+        self.configure(bg=surf, highlightbackground=palette["border_strong"], highlightcolor=palette["border_strong"])
         self._val_lbl.configure(bg=surf, fg=palette["fg"])
-        self._btn_dec.apply_theme(palette)
-        self._btn_inc.apply_theme(palette)
+        self._sep1.configure(bg=bdr)
+        self._sep2.configure(bg=bdr)
+        self._btn_dec.configure(bg=elev, fg=palette["fg"])
+        self._btn_inc.configure(bg=elev, fg=palette["fg"])
 
 
 @dataclass
@@ -638,8 +651,9 @@ class CardGroup(tk.Frame):
 
         s_lbl = None
         if subtitle:
-            s_lbl = tk.Label(left, text=subtitle, font=ui_font(9), anchor="w", wraplength=410, justify="left")
+            s_lbl = tk.Label(left, text=subtitle, font=ui_font(9), anchor="w", wraplength=520, justify="left")
             s_lbl.pack(fill="x", pady=(2, 0))
+            left.bind("<Configure>", lambda evt, l=s_lbl: l.configure(wraplength=max(220, evt.width - 8)))
             self._secondary_labels.append(s_lbl)
 
         return RowHandle(control=ctrl, title_lbl=t_lbl, sub_lbl=s_lbl, badge_lbl=badge_lbl)
