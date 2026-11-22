@@ -2,7 +2,7 @@ import time
 import tkinter as tk
 from input_synth import get_work_area
 from rover_system import log_error
-from ui_theme import THEMES, apply_dwm_window_theme, ease_out_cubic, ui_font
+from ui_theme import THEMES, apply_dwm_window_theme, dp, ease_out_cubic, ui_font
 
 
 class ToastManager:
@@ -109,14 +109,14 @@ class ToastManager:
 
             t.update_idletasks()
             apply_dwm_window_theme(t, self.config["theme"], corner_round=True)
-            w = max(t.winfo_reqwidth(), 240)
-            h = max(t.winfo_reqheight(), 48)
+            w = max(t.winfo_reqwidth(), dp(260))
+            h = max(t.winfo_reqheight(), dp(52))
             prog_bar = prog_canvas.create_rectangle(0, 0, w, 3, fill=p["accent"], outline="")
 
             wa_l, wa_t, wa_r, _wa_b = get_work_area(self.root.winfo_screenwidth(), self.root.winfo_screenheight())
             tx = max(wa_l + 8, min(wa_r - w - 8, wa_l + (wa_r - wa_l - w) // 2))
             start_y = wa_t - h - 8
-            target_y = wa_t + 22
+            target_y = wa_t + dp(22)
 
             self.focus_guard.show_noactivate_topmost(t, tx, start_y, w, h)
 

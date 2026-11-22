@@ -1,4 +1,6 @@
+import math
 import tkinter as tk
+from PIL import Image, ImageDraw, ImageTk
 from input_synth import ACTION_LABELS, ACTIONS
 from rover_system import DEFAULT_BUTTON_MAP
 from ui_theme import (
@@ -6,6 +8,8 @@ from ui_theme import (
     MonoButton,
     apply_dwm_window_theme,
     center_window_on_parent,
+    dp,
+    get_dpi_scale,
     mono_font,
     ui_font,
 )
@@ -36,29 +40,54 @@ BUTTON_ORDER = [
 ]
 
 
-def _rounded_poly(x1, y1, x2, y2, r):
-    return [
-        x1 + r, y1, x2 - r, y1,
-        x2, y1, x2, y1 + r,
-        x2, y2 - r, x2, y2,
-        x2 - r, y2, x1 + r, y2,
-        x1, y2, x1, y2 - r,
-        x1, y1 + r, x1, y1,
-    ]
+def _catmull_rom_closed(pts, samples_per_seg=14):
+    """Interpolate a closed smooth curve through control points for crisp controller ergonomics."""
+    n = len(pts)
+    out = []
+    for i in range(n):
+        p0 = pts[(i - 1) % n]
+        p1 = pts[i]
+        p2 = pts[(i + 1) % n]
+        p3 = pts[(i + 2) % n]
+        for s in range(samples_per_seg):
+            t = s / float(samples_per_seg)
+            t2 = t * t
+            t3 = t2 * t
+            x = 0.5 * (
+                (2.0 * p1[0])
+                + (-p0[0] + p2[0]) * t
+                + (2.0 * p0[0] - 5.0 * p1[0] + 4.0 * p2[0] - p3[0]) * t2
+                + (-p0[0] + 3.0 * p1[0] - 3.0 * p2[0] + p3[0]) * t3
+            )
+            y = 0.5 * (
+                (2.0 * p1[1])
+                + (-p0[1] + p2[1]) * t
+                + (2.0 * p0[1] - 5.0 * p1[1] + 4.0 * p2[1] - p3[1]) * t2
+                + (-p0[1] + 3.0 * p1[1] - 3.0 * p2[1] + p3[1]) * t3
+            )
+            out.append((x, y))
+    return out
 
 
 class GamepadDiagram(tk.Canvas):
-    """Interactive Nordic Cockpit gamepad schematic with live sticks, D-Pad, View/Home indicators, and auto-select on press."""
+    """High-DPI anti-aliased 2-color gamepad schematic with live sticks, D-Pad, press states, and selection."""
 
-    W = 560
-    H = 216
+    BASE_W = 560
+    BASE_H = 252
 
-    L3_CX, L3_CY = 156, 98
-    R3_CX, R3_CY = 348, 142
-    STICK_R = 16
-    STICK_TRAVEL = 9
+    L3_BASE = (156, 108)
+    R3_BASE = (344, 150)
+    STICK_R_BASE = 15
+    STICK_TRAVEL_BASE = 8
 
     def __init__(self, parent, selected_btn="A", on_select=None):
+        self.W = dp(self.BASE_W)
+        self.H = dp(self.BASE_H)
+        self.L3_CX, self.L3_CY = dp(self.L3_BASE[0]), dp(self.L3_BASE[1])
+        self.R3_CX, self.R3_CY = dp(self.R3_BASE[0]), dp(self.R3_BASE[1])
+        self.STICK_R = dp(self.STICK_R_BASE)
+        self.STICK_TRAVEL = dp(self.STICK_TRAVEL_BASE)
+
         super().__init__(parent, width=self.W, height=self.H, highlightthickness=1, bd=0, takefocus=1, cursor="hand2")
         self._selected = selected_btn
         self._on_select = on_select
@@ -68,9 +97,10 @@ class GamepadDiagram(tk.Canvas):
         self._focused = False
         self._btn_items = {}
         self._system_items = {}
-        self._body_shape = None
         self._ring_shapes = []
         self._static_texts = []
+        self._bg_photo = None
+        self._bg_item = None
 
         self._build_schematic()
         self.bind("<FocusIn>", lambda _e: self._set_focus(True))
@@ -135,37 +165,69 @@ class GamepadDiagram(tk.Canvas):
         for item_id in shapes + texts:
             self.tag_bind(item_id, "<Button-1>", lambda _e, b=btn_id: self.set_selected(b, notify=True))
 
-    def _build_schematic(self):
-        for bid, x1, x2 in (("LT", 124, 184), ("RT", 374, 434)):
-            sh = self.create_polygon(_rounded_poly(x1, 10, x2, 34, 8), smooth=True, splinesteps=16, width=1)
-            tx = self.create_text((x1 + x2) / 2, 22, text=bid, font=mono_font(8, "bold"))
-            self._register_btn(bid, [sh], [tx])
+    def _render_aa_background(self, palette):
+        """Render controller silhouette & stick wells at 3x supersampling via Pillow for zero jagged edges."""
+        ss = 3
+        s = get_dpi_scale() * ss
+        iw, ih = self.W * ss, self.H * ss
+        surf = palette.get("surface", palette["bg"])
+        img = Image.new("RGBA", (iw, ih), surf)
+        draw = ImageDraw.Draw(img)
 
-        for bid, x1, x2 in (("LB", 110, 198), ("RB", 360, 448)):
-            sh = self.create_polygon(_rounded_poly(x1, 38, x2, 58, 8), smooth=True, splinesteps=16, width=1)
-            tx = self.create_text((x1 + x2) / 2, 48, text=bid, font=mono_font(8, "bold"))
-            self._register_btn(bid, [sh], [tx])
-
-        body_pts = [
-            146, 58,
-            414, 58,
-            460, 72,
-            490, 136,
-            498, 194,
-            472, 216,
-            428, 208,
-            390, 168,
-            170, 168,
-            132, 208,
-            88, 216,
-            62, 194,
-            70, 136,
-            100, 72,
+        # Clean ergonomic Xbox/GameSir Pro contour (fits y=60..210, leaving y=224..250 clear for legends)
+        ctrl_pts = [
+            (170, 62),
+            (280, 60),
+            (390, 62),
+            (442, 72),
+            (474, 108),
+            (494, 168),
+            (486, 204),
+            (456, 212),
+            (416, 194),
+            (382, 174),
+            (280, 172),
+            (178, 174),
+            (144, 194),
+            (104, 212),
+            (74, 204),
+            (66, 168),
+            (86, 108),
+            (118, 72),
         ]
-        self._body_shape = self.create_polygon(body_pts, smooth=True, splinesteps=24, width=2)
+        smooth_pts = [(x * s, y * s) for x, y in _catmull_rom_closed(ctrl_pts, samples_per_seg=16)]
+        draw.polygon(smooth_pts, fill=palette["bg"])
+        draw.line(smooth_pts + [smooth_pts[0]], fill=palette["border_strong"], width=max(2, int(round(2.2 * s))), joint="curve")
 
-        # Left stick (L3)
-        l3_ring = self.create_oval(self.L3_CX - 25, self.L3_CY - 25, self.L3_CX + 25, self.L3_CY + 25, width=1)
+        # Recessed stick wells for L3 and R3
+        for cx_b, cy_b in (self.L3_BASE, self.R3_BASE):
+            r = 25 * s
+            cx, cy = cx_b * s, cy_b * s
+            draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=surf, outline=palette["border_subtle"], width=max(1, int(round(1.4 * s))))
+
+        # Subtle center divider rule above legend footer
+        ly = 224 * s
+        draw.line([(16 * s, ly), (iw - 16 * s, ly)], fill=palette["border_subtle"], width=max(1, int(round(1.0 * s))))
+
+        down = img.resize((self.W, self.H), Image.Resampling.LANCZOS)
+        return ImageTk.PhotoImage(down)
+
+    def _build_schematic(self):
+        self._bg_item = self.create_image(0, 0, anchor="nw")
+
+        # Triggers LT / RT
+        for bid, x1, x2 in (("LT", 126, 186), ("RT", 374, 434)):
+            sh = self.create_rectangle(dp(x1), dp(12), dp(x2), dp(33), width=1)
+            tx = self.create_text(dp((x1 + x2) / 2), dp(22.5), text=bid, font=mono_font(8, "bold"))
+            self._register_btn(bid, [sh], [tx])
+
+        # Bumpers LB / RB
+        for bid, x1, x2 in (("LB", 112, 200), ("RB", 360, 448)):
+            sh = self.create_rectangle(dp(x1), dp(37), dp(x2), dp(57), width=1)
+            tx = self.create_text(dp((x1 + x2) / 2), dp(47), text=bid, font=mono_font(8, "bold"))
+            self._register_btn(bid, [sh], [tx])
+
+        # Left stick cap (L3)
         l3_cap = self.create_oval(
             self.L3_CX - self.STICK_R,
             self.L3_CY - self.STICK_R,
@@ -174,12 +236,11 @@ class GamepadDiagram(tk.Canvas):
             width=1,
         )
         l3_tx = self.create_text(self.L3_CX, self.L3_CY, text="L3", font=mono_font(8, "bold"))
-        self._ring_shapes.append(l3_ring)
         self._register_btn("L3", [l3_cap], [l3_tx])
 
         # Interactive 4-way D-Pad
-        dcx, dcy = 208, 150
-        arm_w, arm_l = 16, 18
+        dcx, dcy = dp(212), dp(148)
+        arm_w, arm_l = dp(16), dp(17)
         dpad_arms = [
             ("D_UP", dcx - arm_w // 2, dcy - arm_w // 2 - arm_l, dcx + arm_w // 2, dcy - arm_w // 2, "^"),
             ("D_DOWN", dcx - arm_w // 2, dcy + arm_w // 2, dcx + arm_w // 2, dcy + arm_w // 2 + arm_l, "v"),
@@ -193,21 +254,20 @@ class GamepadDiagram(tk.Canvas):
             tx = self.create_text((x1 + x2) / 2, (y1 + y2) / 2, text=glyph, font=mono_font(8, "bold"))
             self._register_btn(bid, [rect], [tx])
 
-        # System buttons (- / VIEW and H / HOME) with live press highlighting
-        view_btn = self.create_oval(230, 92, 248, 110, width=1)
-        view_tx = self.create_text(239, 101, text="-", font=mono_font(9, "bold"))
+        # Center system buttons (- / VIEW, H / HOME, + / START)
+        view_btn = self.create_oval(dp(234), dp(96), dp(252), dp(114), width=1)
+        view_tx = self.create_text(dp(243), dp(105), text="-", font=mono_font(9, "bold"))
         self._system_items["VIEW"] = (view_btn, view_tx)
 
-        home_btn = self.create_oval(266, 76, 294, 104, width=1)
-        home_tx = self.create_text(280, 90, text="H", font=mono_font(8, "bold"))
+        home_btn = self.create_oval(dp(266), dp(80), dp(294), dp(108), width=1)
+        home_tx = self.create_text(dp(280), dp(94), text="H", font=mono_font(8, "bold"))
         self._system_items["HOME"] = (home_btn, home_tx)
 
-        start_btn = self.create_oval(310, 92, 328, 110, width=1)
-        start_tx = self.create_text(319, 101, text="+", font=mono_font(9, "bold"))
+        start_btn = self.create_oval(dp(308), dp(96), dp(326), dp(114), width=1)
+        start_tx = self.create_text(dp(317), dp(105), text="+", font=mono_font(9, "bold"))
         self._register_btn("START", [start_btn], [start_tx])
 
-        # Right stick (R3)
-        r3_ring = self.create_oval(self.R3_CX - 25, self.R3_CY - 25, self.R3_CX + 25, self.R3_CY + 25, width=1)
+        # Right stick cap (R3)
         r3_cap = self.create_oval(
             self.R3_CX - self.STICK_R,
             self.R3_CY - self.STICK_R,
@@ -216,24 +276,27 @@ class GamepadDiagram(tk.Canvas):
             width=1,
         )
         r3_tx = self.create_text(self.R3_CX, self.R3_CY, text="R3", font=mono_font(8, "bold"))
-        self._ring_shapes.append(r3_ring)
         self._register_btn("R3", [r3_cap], [r3_tx])
 
-        for bid, cx, cy in (("Y", 402, 82), ("X", 380, 103), ("B", 424, 103), ("A", 402, 124)):
-            ov = self.create_oval(cx - 12, cy - 12, cx + 12, cy + 12, width=1)
-            tx = self.create_text(cx, cy, text=bid, font=mono_font(8, "bold"))
+        # Face buttons Y, X, B, A
+        for bid, cx, cy in (("Y", 404, 86), ("X", 382, 107), ("B", 426, 107), ("A", 404, 128)):
+            r = dp(12)
+            px, py = dp(cx), dp(cy)
+            ov = self.create_oval(px - r, py - r, px + r, py + r, width=1)
+            tx = self.create_text(px, py, text=bid, font=mono_font(8, "bold"))
             self._register_btn(bid, [ov], [tx])
 
+        # Clean footer legends well below the controller silhouette
         self._legend_left = self.create_text(
-            14,
-            202,
+            dp(16),
+            dp(238),
             text="Clic o pulsa boton en el mando",
             anchor="w",
             font=ui_font(8),
         )
         self._legend_right = self.create_text(
-            self.W - 14,
-            202,
+            self.W - dp(16),
+            dp(238),
             text="2x (-)/H: Modo | R-Stick: Scroll",
             anchor="e",
             font=ui_font(8),
@@ -250,8 +313,8 @@ class GamepadDiagram(tk.Canvas):
             highlightcolor=palette["accent"],
             highlightthickness=2 if self._focused else 1,
         )
-        if self._body_shape is not None:
-            self.itemconfig(self._body_shape, fill=palette["bg"], outline=palette["border_strong"])
+        self._bg_photo = self._render_aa_background(palette)
+        self.itemconfig(self._bg_item, image=self._bg_photo)
         for sh in self._ring_shapes:
             self.itemconfig(sh, fill=surf, outline=palette["border_subtle"])
         for tx in self._static_texts:
@@ -295,7 +358,7 @@ class GamepadDiagram(tk.Canvas):
 
 
 class ActionPickerModal(tk.Toplevel):
-    """Keyboard-accessible Nordic Cockpit modal to pick a mapped action for a gamepad button."""
+    """Keyboard-accessible matte modal to pick a mapped action for a gamepad button."""
 
     def __init__(self, parent_win, button_id, current_action, theme_name, on_pick):
         super().__init__(parent_win)
@@ -309,37 +372,25 @@ class ActionPickerModal(tk.Toplevel):
         self.configure(bg=p["bg"])
         apply_dwm_window_theme(self, theme_name)
 
-        outer = tk.Frame(
-            self,
-            bg=p["surface"],
-            padx=18,
-            pady=16,
-            highlightthickness=1,
-            highlightbackground=p["border_strong"],
-        )
-        outer.pack(fill="both", expand=True, padx=10, pady=10)
+        outer = tk.Frame(self, bg=p["surface"], padx=dp(18), pady=dp(16), highlightthickness=1, highlightbackground=p["border_strong"])
+        outer.pack(fill="both", expand=True, padx=dp(10), pady=dp(10))
 
-        hdr = tk.Frame(outer, bg=p["surface"])
-        hdr.pack(fill="x")
-        badge = tk.Label(hdr, text=button_id, font=mono_font(9, "bold"), bg=p["accent"], fg=p["accent_fg"], padx=8, pady=2)
-        badge.pack(side="left", padx=(0, 10))
         tk.Label(
-            hdr,
+            outer,
             text=BUTTON_LABELS.get(button_id, button_id),
             font=ui_font(12, "bold"),
             bg=p["surface"],
             fg=p["fg"],
             anchor="w",
-        ).pack(side="left", fill="x")
-
+        ).pack(fill="x")
         tk.Label(
             outer,
-            text="Elige la accion que ejecutara este boton en Modo Mouse (Esc para cancelar):",
-            font=ui_font(9),
+            text="Elige la accion en Modo Mouse (Esc para cancelar):",
+            font=ui_font(8),
             bg=p["surface"],
             fg=p["fg_secondary"],
             anchor="w",
-        ).pack(fill="x", pady=(6, 10))
+        ).pack(fill="x", pady=(dp(2), dp(10)))
 
         grid = tk.Frame(outer, bg=p["surface"])
         grid.pack(fill="both", expand=True)
@@ -353,18 +404,18 @@ class ActionPickerModal(tk.Toplevel):
                 act_label,
                 command=lambda a=act_id: self._select(a),
                 primary=is_cur,
-                width=28,
-                padx=8,
-                pady=4,
-                font_size=9,
+                width=29,
+                padx=dp(8),
+                pady=dp(5),
+                font_size=8,
             )
             btn.apply_theme(p)
-            btn.grid(row=r, column=c, padx=4, pady=2, sticky="ew")
+            btn.grid(row=r, column=c, padx=dp(4), pady=dp(2), sticky="ew")
             self._btns.append((act_id, btn))
 
         footer = tk.Frame(outer, bg=p["surface"])
-        footer.pack(fill="x", pady=(12, 0))
-        b_cancel = MonoButton(footer, "Cancelar", command=self.destroy, padx=14, pady=5)
+        footer.pack(fill="x", pady=(dp(12), 0))
+        b_cancel = MonoButton(footer, "Cancelar", command=self.destroy, padx=dp(14), pady=dp(5))
         b_cancel.apply_theme(p)
         b_cancel.pack(side="right")
 

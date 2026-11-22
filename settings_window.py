@@ -30,6 +30,7 @@ from ui_theme import (
     apply_dwm_window_theme,
     center_window_on_parent,
     center_window_on_screen,
+    dp,
     get_resource_path,
     mono_font,
     ui_font,
@@ -54,8 +55,9 @@ class SettingsWindow:
         self.win = app.root
         self.config = app.config
         self.win.title(f"{APP_NAME} - Configuracion")
-        self.win.geometry("940x670")
-        self.win.minsize(560, 420)
+        init_w, init_h = dp(960), dp(680)
+        self.win.geometry(f"{init_w}x{init_h}")
+        self.win.minsize(dp(580), dp(430))
 
         self.current_page = "general"
         self.selected_btn = "B"
@@ -70,7 +72,7 @@ class SettingsWindow:
             except Exception:
                 pass
 
-        center_window_on_screen(self.win, 940, 670)
+        center_window_on_screen(self.win, dp(960), dp(680))
         self.win.protocol("WM_DELETE_WINDOW", self._on_close_request)
         self.win.bind("<Escape>", self._on_escape)
 
@@ -157,7 +159,7 @@ class SettingsWindow:
         self.workspace = tk.Frame(self.shell)
         self.workspace.pack(side="top", fill="both", expand=True)
 
-        self.sidebar = tk.Frame(self.workspace, width=236, padx=14, pady=16)
+        self.sidebar = tk.Frame(self.workspace, width=dp(236), padx=dp(14), pady=dp(16))
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
@@ -204,7 +206,7 @@ class SettingsWindow:
             font=ui_font(8),
             justify="left",
             anchor="w",
-            wraplength=184,
+            wraplength=dp(184),
         )
         self.hint_body_lbl.pack(fill="x", pady=(4, 8))
         self.btn_quick_kb = MonoButton(
@@ -282,9 +284,9 @@ class SettingsWindow:
 
     def _on_scroll_canvas_configure(self, evt):
         req_w = self.page_body.winfo_reqwidth()
-        target_w = max(evt.width, req_w) if self.current_page == "gamepad" else max(evt.width, 460)
+        target_w = max(evt.width, req_w) if self.current_page == "gamepad" else max(evt.width, dp(460))
         self.scroll_canvas.itemconfigure(self._page_win_id, width=target_w)
-        self.page_sub_lbl.configure(wraplength=max(240, evt.width - 10))
+        self.page_sub_lbl.configure(wraplength=max(dp(240), evt.width - dp(10)))
         self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all"))
 
     def _on_mousewheel(self, evt):
@@ -714,7 +716,7 @@ class SettingsWindow:
         self.win.update_idletasks()
         cw = max(1, self.scroll_canvas.winfo_width())
         req_w = self.page_body.winfo_reqwidth()
-        target_w = max(cw, req_w) if self.current_page == "gamepad" else max(cw, 460)
+        target_w = max(cw, req_w) if self.current_page == "gamepad" else max(cw, dp(460))
         self.scroll_canvas.itemconfigure(self._page_win_id, width=target_w)
         self.scroll_canvas.configure(scrollregion=self.scroll_canvas.bbox("all"))
         if animate:

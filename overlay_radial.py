@@ -1,27 +1,28 @@
 import math
 import tkinter as tk
+from PIL import Image, ImageDraw, ImageTk
 from input_synth import get_work_area
 from rover_system import log_error
-from ui_theme import THEMES, apply_dwm_window_theme, mono_font
+from ui_theme import THEMES, apply_dwm_window_theme, dp, get_dpi_scale, load_pil_font
 
 RADIAL_ACTIONS = [
-    ("monitor_off", "Monitor\nOFF", "Apagar pantalla"),
-    ("screenshot", "Captura\nWin+Sh+S", "Recorte de pantalla"),
+    ("monitor_off", "Monitor", "Apagar pantalla"),
+    ("screenshot", "Captura", "Recorte Win + Shift + S"),
     ("keyboard", "Teclado", "Abrir teclado flotante"),
     ("mute", "Silencio", "Silenciar / activar audio"),
-    ("suspend", "Suspender\nPC", "Suspender equipo"),
-    ("close_app", "Cerrar\nAlt+F4", "Cerrar ventana activa"),
-    ("toggle_mode", "Modo\nJuego/M", "Alternar Juego / Mouse"),
+    ("suspend", "Suspender", "Suspender equipo"),
+    ("close_app", "Cerrar", "Cerrar app (Alt + F4)"),
+    ("toggle_mode", "Modo", "Alternar Juego / Mouse"),
     ("settings", "Ajustes", "Abrir configuracion"),
 ]
 
 
 class RadialMenu:
-    """2-color monochrome 8-slice radial couch menu controlled by stick, D-Pad, or mouse."""
+    """High-DPI anti-aliased 8-slice radial couch HUD pre-baked with Pillow 3x supersampling."""
 
-    SIZE = 344
-    OUTER_R = 154
-    INNER_R = 52
+    BASE_SIZE = 416
+    OUTER_R_BASE = 186
+    INNER_R_BASE = 84
 
     def __init__(self, root, config_store, focus_guard, audio, on_action):
         self.root = root
@@ -30,10 +31,12 @@ class RadialMenu:
         self.audio = audio
         self._on_action = on_action
 
+        self.SIZE = dp(self.BASE_SIZE)
         self.visible = False
         self.selected_idx = 0
-        self._slice_polys = []
-        self._slice_texts = []
+        self._frames = []
+        self._theme_cached = None
+        self._img_item = None
 
         self._build_ui()
         self.apply_theme()
@@ -54,60 +57,82 @@ class RadialMenu:
             height=self.SIZE,
             highlightthickness=2,
             bd=0,
+            cursor="hand2",
         )
         self.canvas.pack(fill="both", expand=True)
-
-        cx = self.SIZE / 2.0
-        cy = self.SIZE / 2.0
-        n = len(RADIAL_ACTIONS)
-        step_deg = 360.0 / n
-
-        for idx, (_act_id, short_lbl, _desc) in enumerate(RADIAL_ACTIONS):
-            # 0 is North (-90 deg in screen coordinates)
-            center_deg = -90.0 + idx * step_deg
-            a1 = math.radians(center_deg - step_deg / 2.0)
-            a2 = math.radians(center_deg + step_deg / 2.0)
-            pts = self._ring_sector_points(cx, cy, self.INNER_R, self.OUTER_R, a1, a2, steps=10)
-            poly = self.canvas.create_polygon(pts, width=1)
-
-            mid_r = (self.INNER_R + self.OUTER_R) / 2.0
-            tx = cx + mid_r * math.cos(math.radians(center_deg))
-            ty = cy + mid_r * math.sin(math.radians(center_deg))
-            txt = self.canvas.create_text(tx, ty, text=short_lbl, font=mono_font(8, "bold"), justify="center")
-
-            for item in (poly, txt):
-                self.canvas.tag_bind(item, "<Enter>", lambda _e, i=idx: self.set_selected(i))
-                self.canvas.tag_bind(item, "<Button-1>", lambda _e, i=idx: self._click_slice(i))
-
-            self._slice_polys.append(poly)
-            self._slice_texts.append(txt)
-
-        self.hub_circle = self.canvas.create_oval(
-            cx - self.INNER_R,
-            cy - self.INNER_R,
-            cx + self.INNER_R,
-            cy + self.INNER_R,
-            width=2,
-        )
-        self.hub_title = self.canvas.create_text(cx, cy - 6, text="ROVER", font=mono_font(9, "bold"), justify="center")
-        self.hub_sub = self.canvas.create_text(cx, cy + 14, text="A/RB: OK", font=mono_font(7), justify="center")
-        self.footer_hint = self.canvas.create_text(
-            cx,
-            self.SIZE - 10,
-            text="Stick/D-Pad: Elegir | A/RB: Usar | B: Cerrar",
-            font=mono_font(7),
-        )
+        self._img_item = self.canvas.create_image(0, 0, anchor="nw")
+        self.canvas.bind("<Motion>", self._on_mouse_move)
+        self.canvas.bind("<Button-1>", self._on_mouse_click)
 
     @staticmethod
-    def _ring_sector_points(cx, cy, r_in, r_out, a1, a2, steps=10):
+    def _ring_sector_points(cx, cy, r_in, r_out, a1, a2, steps=18):
         pts = []
         for s in range(steps + 1):
             a = a1 + (a2 - a1) * (s / float(steps))
-            pts.extend((cx + r_out * math.cos(a), cy + r_out * math.sin(a)))
+            pts.append((cx + r_out * math.cos(a), cy + r_out * math.sin(a)))
         for s in range(steps, -1, -1):
             a = a1 + (a2 - a1) * (s / float(steps))
-            pts.extend((cx + r_in * math.cos(a), cy + r_in * math.sin(a)))
+            pts.append((cx + r_in * math.cos(a), cy + r_in * math.sin(a)))
         return pts
+
+    def _bake_frames(self, palette):
+        """Pre-render all 8 anti-aliased radial states at 3x supersampling for instant zero-lag switching."""
+        ss = 3
+        s = get_dpi_scale() * ss
+        iw = self.SIZE * ss
+        cx = cy = iw / 2.0
+        r_out = self.OUTER_R_BASE * s
+        r_in = self.INNER_R_BASE * s
+
+        f_slice = load_pil_font(int(round(11 * s)), bold=True)
+        f_title = load_pil_font(int(round(14 * s)), bold=True)
+        f_sub = load_pil_font(int(round(8.5 * s)), bold=False)
+        f_hint = load_pil_font(int(round(8 * s)), bold=False)
+
+        n = len(RADIAL_ACTIONS)
+        step_deg = 360.0 / n
+        gap_deg = 2.6  # Clean gap between segments
+
+        frames = []
+        for sel in range(n):
+            img = Image.new("RGBA", (iw, iw), palette["bg"])
+            d = ImageDraw.Draw(img)
+
+            for idx, (_act_id, short_lbl, _desc) in enumerate(RADIAL_ACTIONS):
+                active = idx == sel
+                center_deg = -90.0 + idx * step_deg
+                a1 = math.radians(center_deg - step_deg / 2.0 + gap_deg / 2.0)
+                a2 = math.radians(center_deg + step_deg / 2.0 - gap_deg / 2.0)
+                pts = self._ring_sector_points(cx, cy, r_in, r_out, a1, a2, steps=20)
+
+                fill = palette["inv_bg"] if active else palette["elevated"]
+                outline = palette["fg"] if active else palette["border_subtle"]
+                d.polygon(pts, fill=fill)
+                d.line(pts + [pts[0]], fill=outline, width=max(2, int(round((2.2 if active else 1.2) * s))), joint="curve")
+
+                mid_r = (r_in + r_out) / 2.0
+                tx = cx + mid_r * math.cos(math.radians(center_deg))
+                ty = cy + mid_r * math.sin(math.radians(center_deg))
+                txt_col = palette["inv_fg"] if active else palette["fg"]
+                d.text((tx, ty), short_lbl, font=f_slice, fill=txt_col, anchor="mm")
+
+            # Clean inner HUD hub
+            hub_r = r_in - 6 * s
+            d.ellipse(
+                [cx - hub_r, cy - hub_r, cx + hub_r, cy + hub_r],
+                fill=palette["bg"],
+                outline=palette["fg"],
+                width=max(2, int(round(1.8 * s))),
+            )
+
+            _act_id, short_lbl, desc = RADIAL_ACTIONS[sel]
+            d.text((cx, cy - 16 * s), short_lbl.upper(), font=f_title, fill=palette["fg"], anchor="mm")
+            d.text((cx, cy + 6 * s), desc, font=f_sub, fill=palette["fg_secondary"], anchor="mm")
+            d.text((cx, cy + 28 * s), "A / RB: OK   B: Cerrar", font=f_hint, fill=palette["fg_muted"], anchor="mm")
+
+            down = img.resize((self.SIZE, self.SIZE), Image.Resampling.LANCZOS)
+            frames.append(ImageTk.PhotoImage(down))
+        return frames
 
     def apply_theme(self):
         p = self._palette()
@@ -118,26 +143,36 @@ class RadialMenu:
             highlightbackground=p["fg"],
             highlightcolor=p["fg"],
         )
-        self.canvas.itemconfig(self.hub_circle, fill=p["bg"], outline=p["fg"])
-        self.canvas.itemconfig(self.hub_title, fill=p["fg"])
-        self.canvas.itemconfig(self.hub_sub, fill=p["fg_secondary"])
-        self.canvas.itemconfig(self.footer_hint, fill=p["fg_secondary"])
+        theme_key = self.config["theme"]
+        if self._theme_cached != theme_key or not self._frames:
+            self._frames = self._bake_frames(p)
+            self._theme_cached = theme_key
         self._refresh_slices()
 
     def _refresh_slices(self):
-        p = self._palette()
-        for idx, (poly, txt) in enumerate(zip(self._slice_polys, self._slice_texts)):
-            active = idx == self.selected_idx
-            self.canvas.itemconfig(
-                poly,
-                fill=p["inv_bg"] if active else p["bg"],
-                outline=p["fg"],
-                width=2 if active else 1,
-            )
-            self.canvas.itemconfig(txt, fill=p["inv_fg"] if active else p["fg"])
-        act_id, _short, desc = RADIAL_ACTIONS[self.selected_idx]
-        self.canvas.itemconfig(self.hub_title, text=RADIAL_ACTIONS[self.selected_idx][1].replace("\n", " "))
-        self.canvas.itemconfig(self.hub_sub, text="A / RB")
+        if self._frames and self._img_item is not None:
+            self.canvas.itemconfig(self._img_item, image=self._frames[self.selected_idx])
+
+    def _idx_from_xy(self, x, y):
+        cx = cy = self.SIZE / 2.0
+        dx = x - cx
+        dy = y - cy
+        if math.hypot(dx, dy) < dp(self.INNER_R_BASE) * 0.65:
+            return None
+        deg = math.degrees(math.atan2(dy, dx))
+        rel = (deg + 90.0 + 22.5) % 360.0
+        return int(rel // 45.0) % len(RADIAL_ACTIONS)
+
+    def _on_mouse_move(self, evt):
+        idx = self._idx_from_xy(evt.x, evt.y)
+        if idx is not None:
+            self.set_selected(idx)
+
+    def _on_mouse_click(self, evt):
+        idx = self._idx_from_xy(evt.x, evt.y)
+        if idx is not None:
+            self.selected_idx = idx
+            self.confirm()
 
     def set_selected(self, idx):
         idx = int(idx) % len(RADIAL_ACTIONS)
@@ -153,16 +188,10 @@ class RadialMenu:
         mag = math.hypot(sx, sy)
         if mag < deadzone:
             return
-        # Screen Y is inverted relative to XInput thumb Y (+Y is North / Up)
         deg = math.degrees(math.atan2(-sy, sx))
-        # Shift so 0 deg is North (-90 deg)
         rel = (deg + 90.0 + 22.5) % 360.0
         idx = int(rel // 45.0) % len(RADIAL_ACTIONS)
         self.set_selected(idx)
-
-    def _click_slice(self, idx):
-        self.selected_idx = idx
-        self.confirm()
 
     def show(self):
         if self.visible:

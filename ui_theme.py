@@ -5,8 +5,66 @@ import os
 import sys
 import time
 import tkinter as tk
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from rover_system import log_error
+
+_DPI_INITIALIZED = False
+_DPI_SCALE = None
+
+
+def enable_high_dpi():
+    """Enable Per-Monitor DPI Awareness v2 before creating Tk root so 2K/4K UI renders razor-sharp."""
+    global _DPI_INITIALIZED
+    if _DPI_INITIALIZED:
+        return
+    _DPI_INITIALIZED = True
+    try:
+        user32 = ctypes.windll.user32
+        # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4
+        user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        user32.SetProcessDpiAwarenessContext.restype = wintypes.BOOL
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return
+    except Exception:
+        pass
+    try:
+        shcore = ctypes.windll.shcore
+        shcore.SetProcessDpiAwareness(2)
+        return
+    except Exception:
+        pass
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def get_dpi_scale():
+    """Return system DPI scale factor (e.g. 1.0, 1.25, 1.5, 2.0)."""
+    global _DPI_SCALE
+    if _DPI_SCALE is not None:
+        return _DPI_SCALE
+    enable_high_dpi()
+    scale = 1.0
+    try:
+        user32 = ctypes.windll.user32
+        user32.GetDpiForSystem.argtypes = []
+        user32.GetDpiForSystem.restype = wintypes.UINT
+        dpi = user32.GetDpiForSystem()
+        if dpi >= 96:
+            scale = dpi / 96.0
+    except Exception:
+        scale = 1.0
+    _DPI_SCALE = max(1.0, min(2.5, scale))
+    return _DPI_SCALE
+
+
+def dp(px):
+    """Scale logical pixels to native physical pixels for crisp DPI-aware Tk geometry and canvases."""
+    return int(round(px * get_dpi_scale()))
+
+
+enable_high_dpi()
 
 # Original 2-Color Matte Monochrome Design System (#1E1E1E / #F5F5F5 + JetBrainsMono NF)
 THEMES = {
@@ -123,17 +181,26 @@ def load_bundled_fonts():
             FONT_FAMILY = "Consolas"
         else:
             FONT_FAMILY = "TkFixedFont"
-
-        if "Segoe UI Variable Display" in fams:
-            FONT_UI = "Segoe UI Variable Display"
-        elif "Segoe UI" in fams:
-            FONT_UI = "Segoe UI"
-        else:
-            FONT_UI = FONT_FAMILY
+        FONT_UI = FONT_FAMILY
     except Exception:
         FONT_FAMILY = "Consolas"
-        FONT_UI = "Segoe UI"
+        FONT_UI = FONT_FAMILY
     return FONT_FAMILY
+
+
+def load_pil_font(size_px, bold=True):
+    """Load bundled JetBrainsMono NF TrueType font for supersampled Pillow rendering."""
+    fname = "JetBrainsMonoNerdFont-Bold.ttf" if bold else "JetBrainsMonoNerdFont-Regular.ttf"
+    fpath = get_resource_path(os.path.join("assets", "fonts", fname))
+    try:
+        if os.path.exists(fpath):
+            return ImageFont.truetype(fpath, int(size_px))
+    except Exception:
+        pass
+    try:
+        return ImageFont.truetype("consolab.ttf" if bold else "consola.ttf", int(size_px))
+    except Exception:
+        return ImageFont.load_default()
 
 
 def ui_font(size=10, weight="normal"):
@@ -357,7 +424,9 @@ class ToggleSwitch(tk.Canvas):
     H = 24
 
     def __init__(self, parent, value=False, on_change=None):
-        super().__init__(parent, width=self.W, height=self.H, highlightthickness=0, bd=0, takefocus=1, cursor="hand2")
+        self._sw = dp(48)
+        self._sh = dp(24)
+        super().__init__(parent, width=self._sw, height=self._sh, highlightthickness=0, bd=0, takefocus=1, cursor="hand2")
         self._value = bool(value)
         self._pos = 1.0 if self._value else 0.0
         self._anim_id = None
@@ -440,15 +509,16 @@ class ToggleSwitch(tk.Canvas):
         outline_col = p["fg"] if self._focused else (p["accent"] if is_on else p["border_strong"])
         knob_fill = p["accent_fg"] if is_on else p["fg"]
 
-        x1, y1, x2, y2 = 2, 2, self.W - 2, self.H - 2
+        pad = dp(2)
+        x1, y1, x2, y2 = pad, pad, self._sw - pad, self._sh - pad
         self._draw_pill(x1, y1, x2, y2, track_fill, outline_col, 2 if self._focused else 1)
 
-        pad = 5
-        d = self.H - pad * 2
-        min_x = pad
-        max_x = self.W - pad - d
+        kpad = dp(5)
+        d = self._sh - kpad * 2
+        min_x = kpad
+        max_x = self._sw - kpad - d
         kx = min_x + (max_x - min_x) * self._pos
-        self.create_oval(kx, pad, kx + d, pad + d, fill=knob_fill, outline="")
+        self.create_oval(kx, kpad, kx + d, kpad + d, fill=knob_fill, outline="")
 
     def _draw_pill(self, x1, y1, x2, y2, fill, outline, width):
         h = y2 - y1
@@ -725,6 +795,7 @@ class FlatScrollbar(tk.Canvas):
     """Minimal monochrome Canvas scrollbar supporting vertical and horizontal scrolling."""
 
     def __init__(self, parent, orient="vertical", command=None, thickness=10):
+        thickness = dp(thickness)
         kw = {"width": thickness} if orient == "vertical" else {"height": thickness}
         super().__init__(parent, highlightthickness=0, bd=0, cursor="hand2", **kw)
         self._orient = orient

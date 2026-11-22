@@ -26,6 +26,7 @@ from ui_theme import (
     ToggleSwitch,
     apply_dwm_window_theme,
     center_window_on_screen,
+    dp,
     get_resource_path,
     load_bundled_fonts,
     mono_font,
@@ -133,9 +134,9 @@ class SetupApp:
         self.root.update_idletasks()
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        req_w = max(600 if not uninstall_mode else 530, self.root.winfo_reqwidth() + 8)
-        req_h = min(sh - 60, self.root.winfo_reqheight() + 8)
-        center_window_on_screen(self.root, min(sw - 40, req_w), req_h)
+        req_w = max(dp(600 if not uninstall_mode else 530), self.root.winfo_reqwidth() + dp(8))
+        req_h = min(sh - dp(60), self.root.winfo_reqheight() + dp(8))
+        center_window_on_screen(self.root, min(sw - dp(40), req_w), req_h)
 
     def _build_ui(self):
         self.outer = tk.Frame(self.root, padx=24, pady=18)

@@ -11,7 +11,7 @@ from input_synth import (
     set_cursor_pos,
 )
 from rover_system import log_error
-from ui_theme import THEMES, apply_dwm_window_theme, ease_out_cubic, mono_font, ui_font
+from ui_theme import THEMES, apply_dwm_window_theme, dp, ease_out_cubic, mono_font, ui_font
 
 # 4 complete keyboard layers: lower, shift (1-shot), caps (locked), symbols (#+= & Spanish accents)
 KEYBOARD_LAYOUTS = {
@@ -93,8 +93,15 @@ class FloatingKeyboard:
         self._popup_anim_id = None
         self._popup_hide_id = None
 
+        self.COL_W = dp(58)
+        self.ACT_W = dp(120)
+        self.KEY_H = dp(44)
+        self.GAP = dp(6)
+        self.PAD = dp(6)
+        self.POPUP_HEADROOM = dp(40)
+
         self.grid_w = self.PAD * 2 + 10 * self.COL_W + self.ACT_W + 10 * self.GAP
-        self.grid_h = self.POPUP_HEADROOM + self.PAD * 2 + 5 * self.KEY_H + 4 * self.GAP + 4
+        self.grid_h = self.POPUP_HEADROOM + self.PAD * 2 + 5 * self.KEY_H + 4 * self.GAP + dp(4)
 
         self._build_ui()
         self._refresh_metrics()
@@ -282,14 +289,14 @@ class FloatingKeyboard:
         cx = (x1 + x2) / 2.0
 
         is_wide = len(label_text) > 2
-        pw = min(210, max(96, len(label_text) * 12 + 24)) if is_wide else 56
-        ph = 44
-        px1 = max(6, min(self.grid_w - pw - 6, cx - pw / 2.0))
+        pw = dp(min(210, max(96, len(label_text) * 12 + 24))) if is_wide else dp(56)
+        ph = dp(44)
+        px1 = max(dp(6), min(self.grid_w - pw - dp(6), cx - pw / 2.0))
         px2 = px1 + pw
 
         # Start slightly lower and lift up by 9px over 80ms
-        base_py2 = max(ph + 4, y1 - 3)
-        start_offset = 9.0
+        base_py2 = max(ph + dp(4), y1 - dp(3))
+        start_offset = float(dp(9))
 
         fsize = 10 if len(label_text) > 8 else (12 if is_wide else 19)
         self.canvas.itemconfig(self._popup_text, text=label_text, font=mono_font(fsize, "bold"), fill=p["fg"])
