@@ -141,6 +141,7 @@ VK_LEFT = 0x25
 VK_UP = 0x26
 VK_RIGHT = 0x27
 VK_DOWN = 0x28
+VK_A = 0x41
 VK_C = 0x43
 VK_F = 0x46
 VK_S = 0x53
@@ -471,6 +472,11 @@ class InputSynthesizer:
 
     def close_active_window(self):
         self.send_key_combo(VK_MENU, VK_F4)
+
+    def clear_all_text(self):
+        """Select all (Ctrl + A) and delete (Backspace) in the focused input."""
+        self.send_key_combo(VK_CONTROL, VK_A)
+        self.send_vk_key(VK_BACK)
 
     def suspend_pc(self):
         try:

@@ -16,28 +16,28 @@ from ui_theme import THEMES, apply_dwm_window_theme, dp, ease_out_cubic, mono_fo
 # 4 complete keyboard layers: lower, shift (1-shot), caps (locked), symbols (#+= & Spanish accents)
 KEYBOARD_LAYOUTS = {
     "lower": [
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Borrar"],
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Borrar todo"],
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "Mayus"],
         ["a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ", "Enter"],
         ["z", "x", "c", "v", "b", "n", "m", ".", ",", "-", "?"],
         ["#+=", "Espacio", ".com", "@gmail.com", "<", ">"],
     ],
     "shift": [
-        ["!", "@", "#", "$", "%", "&", "/", "(", ")", "=", "Borrar"],
+        ["!", "@", "#", "$", "%", "&", "/", "(", ")", "=", "Borrar todo"],
         ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "Mayus"],
         ["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ñ", "Enter"],
         ["Z", "X", "C", "V", "B", "N", "M", ":", ";", "_", "¿"],
         ["#+=", "Espacio", ".com", "@gmail.com", "<", ">"],
     ],
     "caps": [
-        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Borrar"],
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Borrar todo"],
         ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "CAPS"],
         ["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ñ", "Enter"],
         ["Z", "X", "C", "V", "B", "N", "M", ":", ";", "_", "¿"],
         ["#+=", "Espacio", ".com", "@gmail.com", "<", ">"],
     ],
     "symbols": [
-        ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "Borrar"],
+        ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "Borrar todo"],
         ["_", "+", "=", "{", "}", "[", "]", "\\", "|", "~", "Mayus"],
         ["á", "é", "í", "ó", "ú", "ü", ":", ";", "\"", "'", "Enter"],
         ["¿", "?", "¡", "!", "<", ">", "/", ".", ",", "-", "ABC"],
@@ -58,7 +58,7 @@ KB_HINTS = [
     ("B", "Cerrar"),
 ]
 
-FUNCTION_KEYS = {"Borrar", "Mayus", "CAPS", "Enter", "#+=", "ABC", "Espacio", ".com", "<", ">"}
+FUNCTION_KEYS = {"Borrar", "Borrar todo", "Mayus", "CAPS", "Enter", "#+=", "ABC", "Espacio", ".com", "<", ">"}
 
 
 class FloatingKeyboard:
@@ -537,6 +537,10 @@ class FloatingKeyboard:
         self.audio.play_back()
         self.synth.send_vk_key(VK_BACK)
 
+    def clear_all_text(self):
+        self.audio.play_back()
+        self.synth.clear_all_text()
+
     def press_space(self):
         self.audio.play_press()
         self.synth.send_vk_key(VK_SPACE)
@@ -572,8 +576,8 @@ class FloatingKeyboard:
             ),
         )
 
-        if val == "Borrar":
-            self.press_backspace()
+        if val in ("Borrar", "Borrar todo"):
+            self.clear_all_text()
         elif val == "Enter":
             self.submit_and_close()
         elif val == "Espacio":
