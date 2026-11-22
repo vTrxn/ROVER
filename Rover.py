@@ -169,8 +169,8 @@ class RoverApp:
             self.synth.turn_off_monitor()
         elif act_id == "screenshot":
             self.synth.capture_screenshot()
-        elif act_id == "keyboard":
-            self.keyboard.show()
+        elif act_id == "paste":
+            self.synth.execute_action("paste", just_pressed=True, just_released=False, is_held=False)
         elif act_id == "mute":
             self.synth.send_vk_key(VK_VOLUME_MUTE)
         elif act_id == "suspend":

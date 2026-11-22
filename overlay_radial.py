@@ -8,7 +8,7 @@ from ui_theme import THEMES, apply_dwm_window_theme, dp, get_dpi_scale, load_pil
 RADIAL_ACTIONS = [
     ("monitor_off", "Monitor", "Apagar pantalla"),
     ("screenshot", "Captura", "Recorte Win + Shift + S"),
-    ("keyboard", "Teclado", "Abrir teclado flotante"),
+    ("paste", "Pegar", "Pegar texto (Ctrl + V)"),
     ("mute", "Silencio", "Silenciar / activar audio"),
     ("suspend", "Suspender", "Suspender equipo"),
     ("close_app", "Cerrar", "Cerrar app (Alt + F4)"),
