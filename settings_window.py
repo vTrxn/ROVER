@@ -25,6 +25,7 @@ from ui_theme import (
     MonoButton,
     SegmentedControl,
     StepperControl,
+    ThemedEntryRow,
     ToggleSwitch,
     apply_dwm_window_theme,
     center_window_on_parent,
@@ -43,6 +44,7 @@ class SettingsWindow:
         ("gamepad", "Mando y Botones"),
         ("mouse", "Mouse y Sticks"),
         ("keyboard", "Teclado Flotante"),
+        ("profiles", "Perfiles por App"),
         ("appearance", "Apariencia y Audio"),
         ("system", "Sistema"),
     ]
@@ -556,20 +558,84 @@ class SettingsWindow:
                 ("LT o tecla [#+=]", "Alternar capa de Simbolos y Acentos (á, é, í, ó, ú, ¿, ¡, @, #)"),
                 ("L3 o tecla [Mayus]", "Alternar Mayuscula 1-toque -> Bloq Mayus (CAPS) -> minusculas"),
                 ("< / > (teclado)", "Mover cursor de texto a izquierda / derecha dentro del campo"),
+                ("Start (+)", "Abrir Menu Radial Control de Sofa (Apagar monitor, Captura, Suspender)"),
             ]
             for badge_txt, desc_txt in shortcuts:
                 g2.add_row(desc_txt, "", None, badge_text=badge_txt)
 
+            g3 = self._make_group("Botones rapidos de escritura (fila inferior)")
+            snips = self.config.get_kb_snippets()
+
+            g3.add_row(
+                "Boton rapido 1",
+                "Texto completo que se escribe al pulsar la primera tecla rapida.",
+                lambda p, v=snips[0]: ThemedEntryRow(p, v, lambda txt: self._save_snippet(0, txt), width=18),
+            )
+            g3.add_row(
+                "Boton rapido 2",
+                "Ideal para tu correo o dominio frecuente (ej. @gmail.com).",
+                lambda p, v=snips[1]: ThemedEntryRow(p, v, lambda txt: self._save_snippet(1, txt), width=18),
+            )
+
+        elif key == "profiles":
+            self.page_title_lbl.configure(text="Perfiles por App")
+            self.page_sub_lbl.configure(
+                text="Cambio automatico a Modo Juego en videojuegos y controles multimedia en streaming."
+            )
+
+            g1 = self._make_group("Deteccion automatica")
+            g1.add_row(
+                "Activar perfiles por aplicacion",
+                "Detecta la ventana en primer plano cada 0.45s sin robar foco.",
+                lambda p: ToggleSwitch(
+                    p,
+                    value=self.config["auto_profiles_enabled"],
+                    on_change=lambda v: self.config.set_and_save("auto_profiles_enabled", v),
+                ),
+            )
+            cur_exe = self.app.profile_mgr.last_exe or "ninguna"
+            cur_prof = self.app.profile_mgr.active_profile.upper()
+            self._prof_live_row = g1.add_row(
+                f"Ventana actual: {cur_exe}",
+                f"Perfil activo: {cur_prof}",
+                lambda p: MonoButton(p, "Abrir Menu Radial", command=self.app.open_radial_menu),
+            )
+
+            g2 = self._make_group("Reglas (nombres de .exe separados por coma)")
+
+            g2.add_row(
+                "Apps de Juego (Modo Juego auto)",
+                "Al enfocar estos .exe, Rover pausa Modo Mouse automaticamente.",
+                lambda p: ThemedEntryRow(
+                    p,
+                    ", ".join(self.config["game_apps"]),
+                    lambda txt: self._save_app_list("game_apps", txt),
+                    width=26,
+                    font_size=8,
+                ),
+            )
+            g2.add_row(
+                "Apps Media (D-Pad: ±10s y Volumen)",
+                "Netflix, Spotify, VLC o Stremio reciben atajos directos en D-Pad.",
+                lambda p: ThemedEntryRow(
+                    p,
+                    ", ".join(self.config["media_apps"]),
+                    lambda txt: self._save_app_list("media_apps", txt),
+                    width=26,
+                    font_size=8,
+                ),
+            )
+
         elif key == "appearance":
             self.page_title_lbl.configure(text="Apariencia y Audio")
             self.page_sub_lbl.configure(
-                text="Estetica monocromatica 100% mate (sin glassmorphism) y motor acustico tipo relé Volvo."
+                text="Estetica monocromatica 100% mate (sin glassmorphism), audio estilo Volvo y vibracion."
             )
 
             g1 = self._make_group("Tema visual")
             self._app_theme_row = g1.add_row(
                 "Paleta del sistema",
-                "Superficies mate de alto contraste (WCAG AAA) con acento focal Ambar Volvo (#E5A93C).",
+                "Superficies mate en 2 colores (#1E1E1E y #F5F5F5) de alto contraste.",
                 lambda p: SegmentedControl(
                     p,
                     [("dark", "Gris mate"), ("light", "Blanco invertido")],
@@ -583,7 +649,7 @@ class SettingsWindow:
                 lambda p: MonoButton(p, "Alternar tema", command=self._toggle_theme, primary=True),
             )
 
-            g2 = self._make_group("Acustica Tactil Volvo")
+            g2 = self._make_group("Acustica Tactil Volvo y Vibracion")
             self._app_sound_row = g2.add_row(
                 "Activar sonidos tactiles",
                 "Sintesis PCM en memoria inspirada en el relé amortiguado de cabina de Volvo.",
@@ -597,6 +663,20 @@ class SettingsWindow:
                 "Probar respuesta acustica",
                 "Escucha el par Tick-Tock de baja latencia (< 0.2 ms).",
                 lambda p: MonoButton(p, "Probar Tick-Tock", command=lambda: self.app.audio.play_mode()),
+            )
+            g2.add_row(
+                "Micro-vibracion en mando (XInput)",
+                "Pulso tactil corto de 42ms al cambiar de modo o abrir el Menu Radial.",
+                lambda p: ToggleSwitch(
+                    p,
+                    value=self.config["haptic_rumble"],
+                    on_change=lambda v: self.config.set_and_save("haptic_rumble", v),
+                ),
+            )
+            g2.add_row(
+                "Probar vibracion",
+                "Envia un pulso suave al mando XInput conectado.",
+                lambda p: MonoButton(p, "Vibrar", command=lambda: self.app.poller.rumble(0.40, 0.30, 80)),
             )
 
         elif key == "system":
@@ -817,12 +897,30 @@ class SettingsWindow:
         nxt = "light" if self.config["theme"] == "dark" else "dark"
         self._set_theme(nxt)
 
+    def _save_snippet(self, idx, text_val):
+        cleaned = str(text_val or "").strip()[:32]
+        if not cleaned:
+            return
+        snips = self.config.get_kb_snippets()
+        snips[idx] = cleaned
+        self.config.set_and_save("kb_snippets", snips)
+        self.app.keyboard.apply_theme()
+        self.app.audio.play_press()
+        self.app.toast.show("Boton rapido guardado", f"Tecla {idx + 1}: {cleaned}")
+
+    def _save_app_list(self, cfg_key, raw_text):
+        items = [s.strip().lower() for s in str(raw_text or "").split(",") if s.strip()]
+        self.config.set_and_save(cfg_key, items)
+        self.app.audio.play_press()
+        self.app.toast.show("Perfiles guardados", f"{len(items)} aplicaciones configuradas")
+
     def _set_theme(self, theme_name):
         if theme_name not in THEMES:
             return
         self.config.set_and_save("theme", theme_name)
         self.apply_theme()
         self.app.keyboard.apply_theme()
+        self.app.radial.apply_theme()
         self.app.refresh_tray_icon()
         if self.current_page == "appearance" and hasattr(self, "_app_theme_row"):
             self._app_theme_row.control.select(theme_name, notify=False)
@@ -842,16 +940,20 @@ class SettingsWindow:
         self.ctrl_dot.delete("all")
         if self.app.controller_connected and snap.connected:
             b_lbl = "XInput" if snap.backend == "xinput" else "HID"
+            bat = f" · {snap.battery_label}" if snap.battery_label else ""
             self.ctrl_dot.create_oval(1, 1, 7, 7, fill=p["accent"], outline="")
-            self.ctrl_status_lbl.configure(text=f"{b_lbl} #{snap.slot + 1}", fg=p["fg"])
+            self.ctrl_status_lbl.configure(text=f"{b_lbl} #{snap.slot + 1}{bat}", fg=p["fg"])
         else:
             self.ctrl_dot.create_oval(1, 1, 7, 7, fill=p["surface"], outline=p["fg_muted"])
             self.ctrl_status_lbl.configure(text="Sin mando", fg=p["fg_secondary"])
 
+        prof = self.app.profile_mgr.active_profile
+        mode_base = "MOUSE" if self.app.mouse_mode else "JUEGO"
+        prof_suffix = f" ({prof.upper()})" if prof != "default" else ""
         if self.app.mouse_mode:
-            self.mode_chip.configure(text="MODO: MOUSE", bg=p["accent"], fg=p["accent_fg"])
+            self.mode_chip.configure(text=f"MODO: {mode_base}{prof_suffix}", bg=p["accent"], fg=p["accent_fg"])
         else:
-            self.mode_chip.configure(text="MODO: JUEGO", bg=p["elevated"], fg=p["fg_secondary"])
+            self.mode_chip.configure(text=f"MODO: {mode_base}{prof_suffix}", bg=p["elevated"], fg=p["fg_secondary"])
 
         snd_on = bool(self.config["tactile_sound"])
         self.sound_chip.configure(

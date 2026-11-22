@@ -670,7 +670,41 @@ class CardGroup(tk.Frame):
             if hasattr(ctrl, "apply_theme"):
                 ctrl.apply_theme(palette)
             else:
-                ctrl.configure(bg=surf, fg=palette["fg_secondary"])
+                try:
+                    ctrl.configure(bg=surf, fg=palette["fg_secondary"])
+                except tk.TclError:
+                    ctrl.configure(bg=surf)
+
+
+class ThemedEntryRow(tk.Frame):
+    """Self-theming inline text entry + MonoButton save action for CardGroup rows."""
+
+    def __init__(self, parent, initial_value, on_save, width=18, font_size=9, btn_label="Guardar"):
+        super().__init__(parent, highlightthickness=0, bd=0)
+        self._entry = tk.Entry(self, font=mono_font(font_size), width=width, bd=1, relief="solid")
+        self._entry.insert(0, initial_value)
+        self._entry.pack(side="left", padx=(0, 8), ipady=2)
+        self._btn = MonoButton(
+            self,
+            btn_label,
+            command=lambda: on_save(self._entry.get()),
+            primary=True,
+            padx=10,
+            pady=3,
+            font_size=8,
+        )
+        self._btn.pack(side="left")
+
+    def apply_theme(self, palette):
+        surf = palette.get("surface", palette["bg"])
+        self.configure(bg=surf)
+        self._entry.configure(
+            bg=palette["bg"],
+            fg=palette["fg"],
+            insertbackground=palette["fg"],
+            highlightbackground=palette["border_strong"],
+        )
+        self._btn.apply_theme(palette)
 
 
 class FlatScrollbar(tk.Canvas):

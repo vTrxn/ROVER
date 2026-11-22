@@ -142,10 +142,30 @@ VK_UP = 0x26
 VK_RIGHT = 0x27
 VK_DOWN = 0x28
 VK_C = 0x43
+VK_F = 0x46
+VK_S = 0x53
 VK_V = 0x56
 VK_W = 0x57
 VK_LWIN = 0x5B
+VK_F4 = 0x73
 VK_VOLUME_MUTE = 0xAD
+
+WM_SYSCOMMAND = 0x0112
+SC_MONITORPOWER = 0xF170
+HWND_BROADCAST = wintypes.HWND(0xFFFF)
+
+try:
+    user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.PostMessageW.restype = wintypes.BOOL
+except Exception:
+    pass
+
+try:
+    _powrprof = ctypes.windll.powrprof
+    _powrprof.SetSuspendState.argtypes = [wintypes.BOOL, wintypes.BOOL, wintypes.BOOL]
+    _powrprof.SetSuspendState.restype = wintypes.BOOL
+except Exception:
+    _powrprof = None
 VK_VOLUME_DOWN = 0xAE
 VK_VOLUME_UP = 0xAF
 VK_MEDIA_PLAY_PAUSE = 0xB3
@@ -174,8 +194,14 @@ ACTION_SPECS = [
     ("double_click", "Doble clic izquierdo", "double_click", None),
     ("precision", "Modo precision (mantener)", "modifier", None),
     ("show_keyboard", "Abrir / cerrar teclado", "toggle_keyboard", None),
+    ("radial_menu", "Menu Radial (Control de Sofa)", "radial_menu", None),
     ("escape", "Tecla Escape", "vk_tap", (VK_ESCAPE, False)),
     ("enter", "Tecla Enter", "vk_tap", (VK_RETURN, False)),
+    ("media_ff", "Adelantar video (Flecha Der)", "vk_tap", (VK_RIGHT, True)),
+    ("media_rw", "Retroceder video (Flecha Izq)", "vk_tap", (VK_LEFT, True)),
+    ("fullscreen_f", "Pantalla completa (Tecla F)", "vk_tap", (VK_F, False)),
+    ("space_play", "Pausa / Play (Espacio)", "vk_tap", (VK_SPACE, False)),
+    ("monitor_off", "Apagar monitor", "system_cmd", "monitor_off"),
     ("scroll_up", "Scroll arriba (mantener)", "scroll_hold", (MOUSEEVENTF_WHEEL, 1)),
     ("scroll_down", "Scroll abajo (mantener)", "scroll_hold", (MOUSEEVENTF_WHEEL, -1)),
     ("scroll_left", "Scroll izquierda (mantener)", "scroll_hold", (MOUSEEVENTF_HWHEEL, -1)),
@@ -421,6 +447,38 @@ class InputSynthesizer:
                 self.send_mouse_input(up_flag)
         self._held_mouse_downs.clear()
 
+    def turn_off_monitor(self):
+        try:
+            user32.PostMessageW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2)
+        except Exception as exc:
+            log_error("InputSynthesizer.turn_off_monitor", exc)
+
+    def capture_screenshot(self):
+        """Trigger Windows Snipping Tool (Win + Shift + S)."""
+        try:
+            self.focus_guard.ensure_target_focus()
+            inputs = (INPUT * 6)(
+                self._make_vk_input(VK_LWIN, up=False, extended=True),
+                self._make_vk_input(VK_SHIFT, up=False),
+                self._make_vk_input(VK_S, up=False),
+                self._make_vk_input(VK_S, up=True),
+                self._make_vk_input(VK_SHIFT, up=True),
+                self._make_vk_input(VK_LWIN, up=True, extended=True),
+            )
+            user32.SendInput(6, inputs, INPUT_SIZE)
+        except Exception as exc:
+            log_error("InputSynthesizer.capture_screenshot", exc)
+
+    def close_active_window(self):
+        self.send_key_combo(VK_MENU, VK_F4)
+
+    def suspend_pc(self):
+        try:
+            if _powrprof is not None:
+                _powrprof.SetSuspendState(False, True, False)
+        except Exception as exc:
+            log_error("InputSynthesizer.suspend_pc", exc)
+
     def execute_action(
         self,
         action_id,
@@ -430,6 +488,7 @@ class InputSynthesizer:
         scroll_step=90,
         on_toggle_keyboard=None,
         on_left_click_released=None,
+        on_open_radial=None,
     ):
         spec = ACTION_SPEC_MAP.get(action_id)
         if not spec:
@@ -461,3 +520,7 @@ class InputSynthesizer:
                     self.send_mouse_input(MOUSEEVENTF_LEFTUP)
             elif kind == "toggle_keyboard" and on_toggle_keyboard:
                 on_toggle_keyboard()
+            elif kind == "radial_menu" and on_open_radial:
+                on_open_radial()
+            elif kind == "system_cmd" and payload == "monitor_off":
+                self.turn_off_monitor()

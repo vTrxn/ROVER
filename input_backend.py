@@ -24,6 +24,28 @@ class XINPUT_STATE(ctypes.Structure):
     ]
 
 
+class XINPUT_VIBRATION(ctypes.Structure):
+    _fields_ = [
+        ("wLeftMotorSpeed", ctypes.c_ushort),
+        ("wRightMotorSpeed", ctypes.c_ushort),
+    ]
+
+
+class XINPUT_BATTERY_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BatteryType", ctypes.c_ubyte),
+        ("BatteryLevel", ctypes.c_ubyte),
+    ]
+
+
+BATTERY_DEVTYPE_GAMEPAD = 0x00
+BATTERY_TYPE_DISCONNECTED = 0x00
+BATTERY_TYPE_WIRED = 0x01
+BATTERY_TYPE_ALKALINE = 0x02
+BATTERY_TYPE_NIMH = 0x03
+BATTERY_LEVEL_LABELS = {0: "Baja!", 1: "30%", 2: "65%", 3: "100%"}
+
+
 class JOYINFOEX(ctypes.Structure):
     _fields_ = [
         ("dwSize", wintypes.DWORD),
@@ -128,8 +150,24 @@ if xinput is not None:
         xinput_get_state = xinput.XInputGetState
     xinput_get_state.argtypes = [wintypes.DWORD, ctypes.POINTER(XINPUT_STATE)]
     xinput_get_state.restype = wintypes.DWORD
+
+    try:
+        xinput_set_state = xinput.XInputSetState
+        xinput_set_state.argtypes = [wintypes.DWORD, ctypes.POINTER(XINPUT_VIBRATION)]
+        xinput_set_state.restype = wintypes.DWORD
+    except Exception:
+        xinput_set_state = None
+
+    try:
+        xinput_get_battery = xinput.XInputGetBatteryInformation
+        xinput_get_battery.argtypes = [wintypes.DWORD, ctypes.c_ubyte, ctypes.POINTER(XINPUT_BATTERY_INFORMATION)]
+        xinput_get_battery.restype = wintypes.DWORD
+    except Exception:
+        xinput_get_battery = None
 else:
     xinput_get_state = None
+    xinput_set_state = None
+    xinput_get_battery = None
 
 try:
     winmm = ctypes.windll.winmm
@@ -176,6 +214,9 @@ class GamepadSnapshot:
     ry: int = 0
     lt: int = 0
     rt: int = 0
+    battery_type: str = "unknown"
+    battery_level: int = -1
+    battery_label: str = ""
 
     @property
     def stick_axes(self):
@@ -315,6 +356,13 @@ class GamepadPoller:
         self._joy_info.dwFlags = JOY_RETURNALL
         self._joy_caps_cache = {}
         self._last_winmm_scan = 0.0
+        self._last_battery_scan = 0.0
+        self._battery_type = "unknown"
+        self._battery_level = -1
+        self._battery_label = ""
+        self._rumble_lock = threading.Lock()
+        self._rumble_stop_ts = 0.0
+        self._rumble_active = False
 
         self.active_slot = 0
         self.active_backend = "none"
@@ -322,6 +370,76 @@ class GamepadPoller:
 
         self._rescan_event = threading.Event()
         self._latest_snapshot = GamepadSnapshot()
+
+    def rumble(self, left_pct=0.35, right_pct=0.25, duration_ms=45):
+        """Trigger a short, non-blocking tactile XInput vibration pulse."""
+        if xinput_set_state is None or self.active_backend != "xinput":
+            return
+        slot = self.active_slot
+        l_val = max(0, min(65535, int(left_pct * 65535)))
+        r_val = max(0, min(65535, int(right_pct * 65535)))
+        vib = XINPUT_VIBRATION(wLeftMotorSpeed=l_val, wRightMotorSpeed=r_val)
+        try:
+            if xinput_set_state(slot, ctypes.byref(vib)) == 0:
+                with self._rumble_lock:
+                    self._rumble_stop_ts = time.monotonic() + (max(10, duration_ms) / 1000.0)
+                    self._rumble_active = True
+        except Exception:
+            pass
+
+    def stop_rumble(self):
+        if xinput_set_state is None:
+            return
+        with self._rumble_lock:
+            self._rumble_active = False
+        try:
+            zero = XINPUT_VIBRATION(0, 0)
+            xinput_set_state(self.active_slot, ctypes.byref(zero))
+        except Exception:
+            pass
+
+    def _service_rumble(self, now):
+        with self._rumble_lock:
+            if not self._rumble_active or now < self._rumble_stop_ts:
+                return
+            self._rumble_active = False
+        if xinput_set_state is not None and self.active_backend == "xinput":
+            try:
+                zero = XINPUT_VIBRATION(0, 0)
+                xinput_set_state(self.active_slot, ctypes.byref(zero))
+            except Exception:
+                pass
+
+    def _poll_battery(self, now, force=False):
+        if self.active_backend != "xinput" or xinput_get_battery is None:
+            self._battery_type = "unknown"
+            self._battery_level = -1
+            self._battery_label = ""
+            return
+        if not force and (now - self._last_battery_scan < 5.0):
+            return
+        self._last_battery_scan = now
+        bat = XINPUT_BATTERY_INFORMATION()
+        try:
+            if xinput_get_battery(self.active_slot, BATTERY_DEVTYPE_GAMEPAD, ctypes.byref(bat)) == 0:
+                if bat.BatteryType == BATTERY_TYPE_WIRED:
+                    self._battery_type = "wired"
+                    self._battery_level = 3
+                    self._battery_label = "Cable"
+                elif bat.BatteryType in (BATTERY_TYPE_ALKALINE, BATTERY_TYPE_NIMH):
+                    self._battery_type = "wireless"
+                    self._battery_level = int(bat.BatteryLevel)
+                    self._battery_label = BATTERY_LEVEL_LABELS.get(self._battery_level, "")
+                elif bat.BatteryType == BATTERY_TYPE_DISCONNECTED:
+                    self._battery_type = "unknown"
+                    self._battery_level = -1
+                    self._battery_label = ""
+                else:
+                    self._battery_type = "unknown"
+                    self._battery_level = int(bat.BatteryLevel)
+                    self._battery_label = BATTERY_LEVEL_LABELS.get(self._battery_level, "")
+        except Exception:
+            pass
 
     @property
     def latest_snapshot(self):
@@ -455,14 +573,25 @@ class GamepadPoller:
         return False
 
     def poll(self):
+        now = time.monotonic()
+        self._service_rumble(now)
+
         force = self._rescan_event.is_set()
         if force:
             self._rescan_event.clear()
 
+        prev_slot = self.active_slot
+        prev_backend = self.active_backend
         ok = self._poll_hardware(force_hid=force)
         if not ok:
+            self._battery_type = "unknown"
+            self._battery_level = -1
+            self._battery_label = ""
             self._latest_snapshot = GamepadSnapshot(connected=False)
             return self._latest_snapshot, force
+
+        slot_changed = (self.active_slot != prev_slot) or (self.active_backend != prev_backend)
+        self._poll_battery(now, force=(force or slot_changed or self._last_battery_scan == 0.0))
 
         gp = self._state.Gamepad
         pressed = decode_pressed_buttons(gp.wButtons, gp.bLeftTrigger, gp.bRightTrigger)
@@ -478,5 +607,8 @@ class GamepadPoller:
             ry=int(gp.sThumbRY),
             lt=int(gp.bLeftTrigger),
             rt=int(gp.bRightTrigger),
+            battery_type=self._battery_type,
+            battery_level=self._battery_level,
+            battery_label=self._battery_label,
         )
         return self._latest_snapshot, force

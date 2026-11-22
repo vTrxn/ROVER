@@ -20,28 +20,28 @@ KEYBOARD_LAYOUTS = {
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "Mayus"],
         ["a", "s", "d", "f", "g", "h", "j", "k", "l", "ñ", "Enter"],
         ["z", "x", "c", "v", "b", "n", "m", ".", ",", "-", "?"],
-        ["#+= ", "Espacio", ".com", "<", ">"],
+        ["#+=", "Espacio", ".com", "@gmail.com", "<", ">"],
     ],
     "shift": [
         ["!", "@", "#", "$", "%", "&", "/", "(", ")", "=", "Borrar"],
         ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "Mayus"],
         ["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ñ", "Enter"],
         ["Z", "X", "C", "V", "B", "N", "M", ":", ";", "_", "¿"],
-        ["#+= ", "Espacio", ".com", "<", ">"],
+        ["#+=", "Espacio", ".com", "@gmail.com", "<", ">"],
     ],
     "caps": [
         ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "Borrar"],
         ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "CAPS"],
         ["A", "S", "D", "F", "G", "H", "J", "K", "L", "Ñ", "Enter"],
         ["Z", "X", "C", "V", "B", "N", "M", ":", ";", "_", "¿"],
-        ["#+= ", "Espacio", ".com", "<", ">"],
+        ["#+=", "Espacio", ".com", "@gmail.com", "<", ">"],
     ],
     "symbols": [
         ["!", "@", "#", "$", "%", "^", "&", "*", "(", ")", "Borrar"],
         ["_", "+", "=", "{", "}", "[", "]", "\\", "|", "~", "Mayus"],
         ["á", "é", "í", "ó", "ú", "ü", ":", ";", "\"", "'", "Enter"],
         ["¿", "?", "¡", "!", "<", ">", "/", ".", ",", "-", "ABC"],
-        ["ABC", "Espacio", "@", "<", ">"],
+        ["ABC", "Espacio", ".com", "@gmail.com", "<", ">"],
     ],
 }
 
@@ -107,7 +107,11 @@ class FloatingKeyboard:
         return THEMES.get(self.config["theme"], THEMES["dark"])
 
     def _current_grid(self):
-        return KEYBOARD_LAYOUTS.get(self.layer, KEYBOARD_LAYOUTS["lower"])
+        base = KEYBOARD_LAYOUTS.get(self.layer, KEYBOARD_LAYOUTS["lower"])
+        snips = self.config.get_kb_snippets()
+        grid = [list(r) for r in base]
+        grid[4] = [base[4][0], "Espacio", snips[0], snips[1], "<", ">"]
+        return grid
 
     def _build_ui(self):
         self.win = tk.Toplevel(self.root)
@@ -172,14 +176,15 @@ class FloatingKeyboard:
         self.canvas = tk.Canvas(self.outer, width=self.grid_w, height=self.grid_h, highlightthickness=0, bd=0)
         self.canvas.pack()
 
-        # Compute geometry for all 5 rows (Row 4 has 5 keys with custom column spans)
+        # Compute geometry for all 5 rows (Row 4 has 6 keys including 2 configurable snippets)
         self.key_items = []
-        base_layout = KEYBOARD_LAYOUTS["lower"]
-        # Row 4 spans in grid-column units: [#+= (2 cols)] [Espacio (6 cols)] [.com (1 col + gap)] [< (1 col)] [> (action col)]
+        base_layout = self._current_grid()
+        # Row 4 spans in grid-column units: [#+= (2)] [Espacio (3)] [Snippet1 (2)] [Snippet2 (2)] [< (1)] [> (1)]
         r4_spans = [
             (0, 2),   # #+= / ABC
-            (2, 8),   # Espacio
-            (8, 9),   # .com / @
+            (2, 5),   # Espacio
+            (5, 7),   # Snippet 1
+            (7, 9),   # Snippet 2
             (9, 10),  # <
             (10, 11), # >
         ]
@@ -277,7 +282,7 @@ class FloatingKeyboard:
         cx = (x1 + x2) / 2.0
 
         is_wide = len(label_text) > 2
-        pw = 96 if is_wide else 56
+        pw = min(210, max(96, len(label_text) * 12 + 24)) if is_wide else 56
         ph = 44
         px1 = max(6, min(self.grid_w - pw - 6, cx - pw / 2.0))
         px2 = px1 + pw
@@ -286,7 +291,7 @@ class FloatingKeyboard:
         base_py2 = max(ph + 4, y1 - 3)
         start_offset = 9.0
 
-        fsize = 12 if is_wide else 19
+        fsize = 10 if len(label_text) > 8 else (12 if is_wide else 19)
         self.canvas.itemconfig(self._popup_text, text=label_text, font=mono_font(fsize, "bold"), fill=p["fg"])
         self.canvas.itemconfig(self._popup_shadow, fill=p["bg"], state="normal")
         self.canvas.itemconfig(self._popup_box, fill=p["elevated"], outline=p["accent"], state="normal")
@@ -347,7 +352,7 @@ class FloatingKeyboard:
 
         is_shift_key = text in ("Mayus", "CAPS") and self.layer in ("shift", "caps")
         is_sym_key = text in ("#+=", "ABC") and self.layer == "symbols"
-        is_func = text in FUNCTION_KEYS
+        is_func = text in FUNCTION_KEYS or (r_idx == 4 and c_idx in (2, 3))
 
         if flash:
             fill = p["fg"]
@@ -380,9 +385,10 @@ class FloatingKeyboard:
             width = 1
             show_bar = False
 
-        fsize = 9 if len(text) > 2 else 11
+        disp_text = (text[:10] + "..") if (r_idx == 4 and c_idx in (2, 3) and len(text) > 12) else text
+        fsize = 8 if len(disp_text) > 7 else (9 if len(disp_text) > 2 else 11)
         self.canvas.itemconfig(item["bg"], fill=fill, outline=outline, width=width)
-        self.canvas.itemconfig(item["text"], text=text, fill=fg, font=mono_font(fsize, "bold"))
+        self.canvas.itemconfig(item["text"], text=disp_text, fill=fg, font=mono_font(fsize, "bold"))
         self.canvas.itemconfig(item["bar"], fill=p["accent"], state="normal" if show_bar else "hidden")
 
     def apply_theme(self):
@@ -573,9 +579,9 @@ class FloatingKeyboard:
             self.move_text_cursor(-1)
         elif val == ">":
             self.move_text_cursor(1)
-        elif val == ".com":
+        elif r_snap == 4 and c_snap in (2, 3):
             self.audio.play_press()
-            self.synth.send_text(".com")
+            self.synth.send_text(val)
         else:
             self.audio.play_press()
             self.synth.send_char(val)

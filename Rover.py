@@ -5,6 +5,7 @@ import time
 import tkinter as tk
 import pystray
 
+from app_profiles import AppProfileManager
 from audio_feedback import VolvoBlinkerAudioEngine
 from gamepad_ui import BUTTON_ORDER
 from input_backend import (
@@ -19,12 +20,14 @@ from input_synth import (
     MOUSEEVENTF_HWHEEL,
     MOUSEEVENTF_MOVE,
     MOUSEEVENTF_WHEEL,
+    VK_VOLUME_MUTE,
     FocusGuard,
     InputSynthesizer,
     is_cursor_ibeam,
     switch_to_interactive_desktop,
 )
 from overlay_keyboard import FloatingKeyboard
+from overlay_radial import RadialMenu
 from overlay_toast import ToastManager
 from rover_system import (
     APP_NAME,
@@ -60,11 +63,13 @@ class RoverApp:
         self.synth = InputSynthesizer(self.focus_guard)
         self.poller = GamepadPoller()
         self.edge_tracker = InputEdgeTracker()
+        self.profile_mgr = AppProfileManager(self.config)
 
         self._nav_repeater = AutoRepeater(initial_delay=0.25, interval=0.095)
         self._back_repeater = AutoRepeater(initial_delay=0.30, interval=0.070)
         self._space_repeater = AutoRepeater(initial_delay=0.30, interval=0.085)
         self._cursor_repeater = AutoRepeater(initial_delay=0.28, interval=0.075)
+        self._radial_repeater = AutoRepeater(initial_delay=0.26, interval=0.11)
         self._minus_detector = MultiTapDetector(window_sec=0.34)
 
         self._auto_kb_timer_id = None
@@ -84,6 +89,13 @@ class RoverApp:
             self.audio,
             on_state_change=self._on_keyboard_state_change,
             on_consume_buttons=self._consume_active_buttons,
+        )
+        self.radial = RadialMenu(
+            self.root,
+            self.config,
+            self.focus_guard,
+            self.audio,
+            on_action=self._execute_radial_action,
         )
 
     def _on_tk_exception(self, exc, val, tb):
@@ -128,27 +140,68 @@ class RoverApp:
             self.settings_win.sync_controls_from_config()
 
     def toggle_keyboard(self):
+        if self.radial.visible:
+            self.radial.hide(silent=True)
         if self.keyboard.visible:
             self.keyboard.hide(reason="toggle")
         else:
             self.keyboard.show()
 
-    def set_mouse_mode(self, enabled, notify=True):
+    def open_radial_menu(self):
         self._consume_active_buttons()
+        if self.keyboard.visible:
+            self.keyboard.hide(reason="radial")
+        if self.config.get("haptic_rumble", True):
+            self.poller.rumble(0.18, 0.14, 24)
+        self.radial.show()
+
+    def _close_radial_menu(self):
+        self._consume_active_buttons()
+        self.radial.hide()
+
+    def _execute_radial_action(self, act_id):
+        self._consume_active_buttons()
+        if self.config.get("haptic_rumble", True):
+            self.poller.rumble(0.24, 0.18, 28)
+        if act_id == "monitor_off":
+            self.synth.turn_off_monitor()
+        elif act_id == "screenshot":
+            self.synth.capture_screenshot()
+        elif act_id == "keyboard":
+            self.keyboard.show()
+        elif act_id == "mute":
+            self.synth.send_vk_key(VK_VOLUME_MUTE)
+        elif act_id == "suspend":
+            self.synth.suspend_pc()
+        elif act_id == "close_app":
+            self.synth.close_active_window()
+        elif act_id == "toggle_mode":
+            self.toggle_mouse_mode()
+        elif act_id == "settings":
+            self.open_settings_window()
+
+    def set_mouse_mode(self, enabled, notify=True, auto_profile=False):
+        self._consume_active_buttons()
+        if self.radial.visible:
+            self.radial.hide(silent=True)
         if self.keyboard.visible:
             self.keyboard.hide(reason="mode_switch")
         self.mouse_mode = bool(enabled)
+        if not auto_profile:
+            self.profile_mgr.auto_switched_to_game = False
         self.audio.play_mode()
+        if self.config.get("haptic_rumble", True):
+            self.poller.rumble(0.32, 0.22, 42)
         if notify:
             if self.mouse_mode:
-                self.toast.show("Modo Mouse ACTIVO", "Stick: Mover | A: Clic | B: Escape | X: Teclado")
+                self.toast.show("Modo Mouse ACTIVO", "Stick: Mover | A/RB: Clic | B: Escape | Start: Menu")
             else:
                 self.toast.show("Modo Juego ACTIVO", "Doble clic en (-) o Home para Modo Mouse")
         if self.settings_win is not None:
             self.settings_win.refresh_live_status()
 
     def toggle_mouse_mode(self):
-        self.set_mouse_mode(not self.mouse_mode, notify=True)
+        self.set_mouse_mode(not self.mouse_mode, notify=True, auto_profile=False)
 
     def handle_minus_taps(self, count):
         if count >= 2:
@@ -288,8 +341,32 @@ class RoverApp:
             self.edge_tracker.consume_current(snap.pressed, extra=("START",))
             self.root.after(0, self.keyboard.submit_and_close)
 
+    def _step_radial_mode(self, snap, just_pressed, now):
+        # Stick radial aiming (left or right stick)
+        sx, sy = (snap.lx, snap.ly) if max(abs(snap.lx), abs(snap.ly)) >= max(abs(snap.rx), abs(snap.ry)) else (snap.rx, snap.ry)
+        if max(abs(sx), abs(sy)) > 14000:
+            self.root.after(0, self.radial.select_by_stick, sx, sy)
+        else:
+            d_dir = None
+            if "D_RIGHT" in just_pressed or "D_DOWN" in snap.pressed:
+                d_dir = 1
+            elif "D_LEFT" in just_pressed or "D_UP" in snap.pressed:
+                d_dir = -1
+            if self._radial_repeater.step(d_dir, now):
+                self.root.after(0, self.radial.step_direction, d_dir)
+
+        if "A" in just_pressed or "RB" in just_pressed:
+            self.edge_tracker.consume_current(snap.pressed, extra=("A", "RB"))
+            self.root.after(0, self.radial.confirm)
+            return
+
+        if "B" in just_pressed or "START" in just_pressed:
+            self.edge_tracker.consume_current(snap.pressed, extra=("B", "START"))
+            self.root.after(0, self._close_radial_menu)
+
     def _step_mouse_mode(self, snap, just_pressed, just_released, active_holds, rem):
-        dz, b_spd, p_fac, a_exp, s_step, auto_kb, bmap = self.config.snapshot_mouse_params()
+        dz, b_spd, p_fac, a_exp, s_step, auto_kb, base_map = self.config.snapshot_mouse_params()
+        bmap = self.profile_mgr.effective_button_map(base_map)
 
         # Cancel any pending auto-keyboard timer if the user presses B (Esc) or any non-left-click button
         if any(bmap.get(bid) != "left_click" for bid in just_pressed):
@@ -316,6 +393,10 @@ class RoverApp:
             self.edge_tracker.consume_current(snap.pressed)
             self.root.after(0, self.toggle_keyboard)
 
+        def on_open_radial():
+            self.edge_tracker.consume_current(snap.pressed)
+            self.root.after(0, self.open_radial_menu)
+
         def on_left_click_up():
             if auto_kb:
                 self.root.after(0, self._schedule_ibeam_auto_kb)
@@ -332,6 +413,7 @@ class RoverApp:
                 scroll_step=s_step,
                 on_toggle_keyboard=on_toggle_kb,
                 on_left_click_released=on_left_click_up,
+                on_open_radial=on_open_radial,
             )
 
         r_dz = max(6000, dz)
@@ -350,12 +432,26 @@ class RoverApp:
         disconnect_start = 0.0
         last_ui_slot = None
         last_ui_backend = None
+        last_ui_bat = None
+        last_profile_check = 0.0
 
         while self.running:
             snap, was_manual_rescan = self.poller.poll()
             now = time.monotonic()
             if was_manual_rescan:
                 self.root.after(0, self._on_rescan_completed, snap)
+
+            if now - last_profile_check >= 0.45:
+                last_profile_check = now
+                kind, _exe, prof_changed = self.profile_mgr.evaluate()
+                if kind == "game" and self.mouse_mode and not self.keyboard.visible and not self.radial.visible:
+                    self.profile_mgr.auto_switched_to_game = True
+                    self.root.after(0, lambda: self.set_mouse_mode(False, notify=True, auto_profile=True))
+                elif kind != "game" and self.profile_mgr.auto_switched_to_game and not self.mouse_mode:
+                    self.profile_mgr.auto_switched_to_game = False
+                    self.root.after(0, lambda: self.set_mouse_mode(True, notify=True, auto_profile=True))
+                elif prof_changed and self.settings_win is not None:
+                    self.root.after(0, self.settings_win.refresh_live_status)
 
             if snap.connected:
                 disconnect_start = 0.0
@@ -366,21 +462,26 @@ class RoverApp:
                     self._minus_detector.reset()
                     last_ui_slot = snap.slot
                     last_ui_backend = snap.backend
+                    last_ui_bat = snap.battery_label
                     if self.keyboard.visible:
                         self.root.after(0, lambda: self.keyboard.hide(reason="reconnect"))
+                    if self.radial.visible:
+                        self.root.after(0, lambda: self.radial.hide(silent=True))
                     b_lbl = "XInput" if snap.backend == "xinput" else "HID"
+                    bat_txt = f" | Bat: {snap.battery_label}" if snap.battery_label else ""
                     self.root.after(
                         0,
-                        lambda s=snap.slot, b=b_lbl: self.toast.show(
-                            f"Mando #{s + 1} conectado ({b} | Modo Juego)",
+                        lambda s=snap.slot, b=b_lbl, bt=bat_txt: self.toast.show(
+                            f"Mando #{s + 1} conectado ({b}{bt})",
                             "Doble clic en (-) o Home para Modo Mouse",
                         ),
                     )
                     if self.settings_win is not None:
                         self.root.after(0, self.settings_win.refresh_live_status)
-                elif snap.slot != last_ui_slot or snap.backend != last_ui_backend:
+                elif snap.slot != last_ui_slot or snap.backend != last_ui_backend or snap.battery_label != last_ui_bat:
                     last_ui_slot = snap.slot
                     last_ui_backend = snap.backend
+                    last_ui_bat = snap.battery_label
                     if self.settings_win is not None:
                         self.root.after(0, self.settings_win.refresh_live_status)
 
@@ -394,7 +495,10 @@ class RoverApp:
                     self.edge_tracker.consume_current(snap.pressed)
                     self.root.after(0, self.handle_minus_taps, tap_count)
 
-                if self.keyboard.visible:
+                if self.radial.visible:
+                    self._step_radial_mode(snap, just_pressed, now)
+                    time.sleep(0.012)
+                elif self.keyboard.visible:
                     self._step_keyboard_mode(snap, just_pressed, active_holds, now)
                     time.sleep(0.010)
                 elif self.mouse_mode:
@@ -444,6 +548,8 @@ class RoverApp:
                         pass
                     setattr(self.settings_win, attr, None)
         self.synth.release_all_mouse_buttons()
+        self.poller.stop_rumble()
+        self.radial.hide(silent=True)
         self.toast.destroy_active()
         self.audio.close()
         self.instance_guard.close()

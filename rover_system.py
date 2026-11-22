@@ -11,7 +11,7 @@ import time
 import traceback
 
 APP_NAME = "Rover"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 UNINSTALL_REG_PATH = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Rover"
 
 CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), APP_NAME)
@@ -37,7 +37,7 @@ DEFAULT_BUTTON_MAP = {
     "RT": "browser_back",
     "L3": "play_pause",
     "R3": "none",
-    "START": "enter",
+    "START": "radial_menu",
     "D_UP": "scroll_up",
     "D_DOWN": "scroll_down",
     "D_LEFT": "scroll_left",
@@ -45,7 +45,7 @@ DEFAULT_BUTTON_MAP = {
 }
 
 DEFAULT_CONFIG = {
-    "schema_version": 2,
+    "schema_version": 3,
     "theme": "dark",
     "deadzone": 4500,
     "base_speed": 20.0,
@@ -56,7 +56,23 @@ DEFAULT_CONFIG = {
     "auto_keyboard_ibeam": True,
     "show_toasts": True,
     "tactile_sound": True,
+    "haptic_rumble": True,
     "minimize_to_tray": True,
+    "kb_snippets": [".com", "@gmail.com"],
+    "auto_profiles_enabled": True,
+    "game_apps": [
+        "eldenring.exe",
+        "cyberpunk2077.exe",
+        "gta5.exe",
+        "fortniteclient-win64-shipping.exe",
+        "hollow_knight.exe",
+    ],
+    "media_apps": [
+        "netflix.exe",
+        "spotify.exe",
+        "vlc.exe",
+        "stremio.exe",
+    ],
     "button_map": dict(DEFAULT_BUTTON_MAP),
 }
 
@@ -221,6 +237,9 @@ def signal_quit_and_wait(timeout_sec=0.6):
 def default_config_copy():
     cfg = dict(DEFAULT_CONFIG)
     cfg["button_map"] = dict(DEFAULT_BUTTON_MAP)
+    cfg["kb_snippets"] = list(DEFAULT_CONFIG["kb_snippets"])
+    cfg["game_apps"] = list(DEFAULT_CONFIG["game_apps"])
+    cfg["media_apps"] = list(DEFAULT_CONFIG["media_apps"])
     return cfg
 
 
@@ -290,6 +309,17 @@ class ConfigStore:
                 dict(self.data["button_map"]),
             )
 
+    def snapshot_profile_lists(self):
+        with self._lock:
+            return list(self.data["game_apps"]), list(self.data["media_apps"])
+
+    def get_kb_snippets(self):
+        with self._lock:
+            snips = self.data.get("kb_snippets", [".com", "@gmail.com"])
+            s0 = str(snips[0])[:32] if len(snips) > 0 and str(snips[0]).strip() else ".com"
+            s1 = str(snips[1])[:32] if len(snips) > 1 and str(snips[1]).strip() else "@gmail.com"
+            return [s0, s1]
+
     def load(self):
         with self._lock:
             cfg = default_config_copy()
@@ -318,13 +348,29 @@ class ConfigStore:
                                             self._valid_actions is None or act in self._valid_actions
                                         ):
                                             cfg["button_map"][bid] = act
+                            elif k in ("kb_snippets", "game_apps", "media_apps") and isinstance(raw.get(k), list):
+                                cleaned = [str(x).strip() for x in raw[k] if isinstance(x, str) and str(x).strip()]
+                                if k == "kb_snippets":
+                                    if len(cleaned) >= 2:
+                                        cfg[k] = [cleaned[0][:32], cleaned[1][:32]]
+                                    elif len(cleaned) == 1:
+                                        cfg[k] = [cleaned[0][:32], "@gmail.com"]
+                                else:
+                                    cfg[k] = [x.lower() for x in cleaned]
                             elif k in raw and isinstance(raw[k], type(default_v)):
                                 cfg[k] = raw[k]
+                        needs_save = False
                         if raw_schema < 2:
-                            cfg["schema_version"] = 2
                             cfg["button_map"]["B"] = "escape"
                             if cfg["button_map"].get("Y") == "none":
                                 cfg["button_map"]["Y"] = "right_click"
+                            needs_save = True
+                        if raw_schema < 3:
+                            cfg["schema_version"] = 3
+                            if cfg["button_map"].get("START") in ("none", "enter"):
+                                cfg["button_map"]["START"] = "radial_menu"
+                            needs_save = True
+                        if needs_save:
                             self.data = cfg
                             self.save()
                 if src_path != CONFIG_PATH and os.path.exists(src_path):
