@@ -38,6 +38,7 @@ from rover_system import (
 from settings_window import SettingsWindow
 from ui_theme import (
     THEMES,
+    apply_font_selection,
     build_tray_pil_image,
     load_bundled_fonts,
     set_ui_audio_callback,
@@ -80,6 +81,10 @@ class RoverApp:
         self.root = tk.Tk()
         self.root.withdraw()
         load_bundled_fonts()
+        apply_font_selection(
+            self.config.get("font_ui", "JetBrainsMono NF"),
+            self.config.get("font_mono", "JetBrainsMono NF"),
+        )
         self.root.report_callback_exception = self._on_tk_exception
 
         self.toast = ToastManager(self.root, self.config, self.focus_guard, audio=self.audio)

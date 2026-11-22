@@ -47,6 +47,8 @@ DEFAULT_BUTTON_MAP = {
 DEFAULT_CONFIG = {
     "schema_version": 3,
     "theme": "dark",
+    "font_ui": "JetBrainsMono NF",
+    "font_mono": "JetBrainsMono NF",
     "deadzone": 4500,
     "base_speed": 20.0,
     "precision_factor": 0.32,

@@ -18,7 +18,9 @@ from rover_system import (
 )
 from ui_theme import (
     FONT_FAMILY,
+    FONT_MONO_CHOICES,
     FONT_UI,
+    FONT_UI_CHOICES,
     THEMES,
     CardGroup,
     FlatScrollbar,
@@ -28,6 +30,7 @@ from ui_theme import (
     ThemedEntryRow,
     ToggleSwitch,
     apply_dwm_window_theme,
+    apply_font_selection,
     center_window_on_parent,
     center_window_on_screen,
     dp,
@@ -648,9 +651,22 @@ class SettingsWindow:
                 ),
             )
             g1.add_row(
-                "Tipografia activa",
-                f"UI: {FONT_UI} | Instrumentacion y Teclas: {FONT_FAMILY}",
-                lambda p: MonoButton(p, "Alternar tema", command=self._toggle_theme, primary=True),
+                "Fuente de interfaz (UI)",
+                f"Actual: {self.config.get('font_ui', 'JetBrainsMono NF')} (titulos, menu y textos).",
+                lambda p: MonoButton(
+                    p,
+                    self.config.get("font_ui", "JetBrainsMono NF"),
+                    command=lambda: self._cycle_font("font_ui", FONT_UI_CHOICES),
+                ),
+            )
+            g1.add_row(
+                "Fuente de teclas y datos (Mono)",
+                f"Actual: {self.config.get('font_mono', 'JetBrainsMono NF')} (teclado, botones y numeros).",
+                lambda p: MonoButton(
+                    p,
+                    self.config.get("font_mono", "JetBrainsMono NF"),
+                    command=lambda: self._cycle_font("font_mono", FONT_MONO_CHOICES),
+                ),
             )
 
             g2 = self._make_group("Acustica Tactil y Vibracion")
@@ -770,6 +786,20 @@ class SettingsWindow:
         want_top = pos_key == "top"
         if self.config["keyboard_at_top"] != want_top:
             self.app.keyboard.toggle_position()
+
+    def _cycle_font(self, cfg_key, choices):
+        cur = self.config.get(cfg_key, choices[0])
+        idx = (choices.index(cur) + 1) % len(choices) if cur in choices else 0
+        nxt = choices[idx]
+        self.config.set_and_save(cfg_key, nxt)
+        apply_font_selection(
+            self.config.get("font_ui", "JetBrainsMono NF"),
+            self.config.get("font_mono", "JetBrainsMono NF"),
+        )
+        self.app.keyboard.apply_theme()
+        self.app.radial._theme_cached = None
+        self.app.radial.apply_theme()
+        self.show_page("appearance", animate=False)
 
     def _on_volume_change(self, val):
         pct = max(10, min(100, int(round(val))))

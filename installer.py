@@ -179,6 +179,10 @@ class SetupApp:
             )
             self.btn_browse = self._dest_row.control
 
+            # FUTURE NOTE:
+            # Keep installation components modular and selectable via these ToggleSwitches:
+            # sw_desktop (Desktop shortcut), sw_startmenu (Start Menu), sw_startup (Auto-start),
+            # sw_font (Install bundled fonts for user), sw_launch (Launch Rover on finish).
             g_opt = CardGroup(self.outer, title="Opciones de instalacion")
             g_opt.pack(fill="x")
             self._card_groups.append(g_opt)
@@ -199,7 +203,7 @@ class SetupApp:
                 lambda p: ToggleSwitch(p, value=True),
             ).control
             self.sw_font = g_opt.add_row(
-                f"Instalar fuente {FONT_FAMILY} en el usuario",
+                "Instalar fuentes incluidas (JetBrains, Geist, IBM Plex, Space, Inter)",
                 "",
                 lambda p: ToggleSwitch(p, value=True),
             ).control

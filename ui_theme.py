@@ -119,6 +119,28 @@ FONT_FAMILY = "JetBrainsMono NF"
 _FONT_LOADED = False
 _GLOBAL_AUDIO_CB = None
 
+# FUTURE NOTE:
+# Rover bundles multiple fonts in assets/fonts/ (JetBrainsMono NF, Geist, Geist Mono,
+# IBM Plex Mono, Space Mono, Inter) and supports switching both UI and Mono fonts
+# at runtime via apply_font_selection(font_ui, font_mono).
+# Keep all bundled .ttf files registered privately via AddFontResourceExW in load_bundled_fonts().
+FONT_UI_CHOICES = [
+    "JetBrainsMono NF",
+    "Geist",
+    "Inter",
+    "Segoe UI",
+    "IBM Plex Mono",
+    "Geist Mono",
+    "Space Mono",
+]
+FONT_MONO_CHOICES = [
+    "JetBrainsMono NF",
+    "Geist Mono",
+    "IBM Plex Mono",
+    "Space Mono",
+    "Cascadia Mono",
+]
+
 # 64-bit safe gdi32 and dwmapi prototypes
 try:
     gdi32 = ctypes.windll.gdi32
@@ -188,9 +210,45 @@ def load_bundled_fonts():
     return FONT_FAMILY
 
 
+def apply_font_selection(font_ui=None, font_mono=None):
+    """Switch active UI and Mono font families at runtime with safe system fallbacks."""
+    global FONT_UI, FONT_FAMILY
+    load_bundled_fonts()
+    try:
+        import tkinter.font as tkfont
+
+        fams = set(tkfont.families())
+    except Exception:
+        fams = set()
+
+    if font_mono:
+        if not fams or font_mono in fams:
+            FONT_FAMILY = font_mono
+        elif "JetBrainsMono NF" in fams:
+            FONT_FAMILY = "JetBrainsMono NF"
+        elif "Consolas" in fams:
+            FONT_FAMILY = "Consolas"
+
+    if font_ui:
+        if not fams or font_ui in fams:
+            FONT_UI = font_ui
+        else:
+            FONT_UI = FONT_FAMILY
+    return FONT_UI, FONT_FAMILY
+
+
 def load_pil_font(size_px, bold=True):
-    """Load bundled JetBrainsMono NF TrueType font for supersampled Pillow rendering."""
-    fname = "JetBrainsMonoNerdFont-Bold.ttf" if bold else "JetBrainsMonoNerdFont-Regular.ttf"
+    """Load bundled TrueType font matching active FONT_FAMILY for supersampled Pillow rendering."""
+    font_map = {
+        "JetBrainsMono NF": ("JetBrainsMonoNerdFont-Bold.ttf", "JetBrainsMonoNerdFont-Regular.ttf"),
+        "IBM Plex Mono": ("IBMPlexMono-Bold.ttf", "IBMPlexMono-Regular.ttf"),
+        "Space Mono": ("SpaceMono-Bold.ttf", "SpaceMono-Regular.ttf"),
+        "Geist Mono": ("GeistMono-Regular.ttf", "GeistMono-Regular.ttf"),
+        "Geist": ("Geist-Regular.ttf", "Geist-Regular.ttf"),
+        "Inter": ("Inter-Regular.ttf", "Inter-Regular.ttf"),
+    }
+    pair = font_map.get(FONT_FAMILY, ("JetBrainsMonoNerdFont-Bold.ttf", "JetBrainsMonoNerdFont-Regular.ttf"))
+    fname = pair[0] if bold else pair[1]
     fpath = get_resource_path(os.path.join("assets", "fonts", fname))
     try:
         if os.path.exists(fpath):
